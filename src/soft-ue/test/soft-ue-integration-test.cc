@@ -16,459 +16,226 @@
 
 /**
  * @file             soft-ue-integration-test.cc
- * @brief            Soft-UE Integration Tests
+ * @brief            Soft-UE 集成测试
  * @author           softuegroup@gmail.com
  * @version          1.0.0
- * @date             2025-12-08
+ * @date             2025-12-09
  * @copyright        Apache License Version 2.0
  *
  * @details
- * This file contains comprehensive integration tests for the Soft-UE Ultra Ethernet
- * protocol stack, testing end-to-end functionality and ns-3 framework integration.
+ * 测试Soft-UE模块的端到端集成：
+ * - 网络设备功能
+ * - SES/PDS Manager协作
+ * - 多节点通信
+ * - 数据包传输完整性
  */
 
-#include <ns3/test.h>
-#include <ns3/core-module.h>
-#include <ns3/network-module.h>
-#include <ns3/internet-module.h>
-#include <ns3/soft-ue-helper.h>
-#include <ns3/soft-ue-net-device.h>
-#include <ns3/soft-ue-channel.h>
-#include <ns3/ses-manager.h>
-#include <ns3/pds-manager.h>
-#include <ns3/packet.h>
+#include "ns3/test.h"
+#include "ns3/soft-ue-helper.h"
+#include "ns3/soft-ue-net-device.h"
+#include "ns3/soft-ue-channel.h"
+#include "ns3/ses-manager.h"
+#include "ns3/pds-manager.h"
+#include "ns3/packet.h"
+#include "ns3/node-container.h"
+#include "ns3/net-device-container.h"
 
-namespace ns3 {
+using namespace ns3;
 
 /**
- * @brief Test Soft-UE Helper functionality
+ * @brief Soft-UE基础集成测试
  */
-class SoftUeHelperTest : public TestCase
+class SoftUeBasicIntegrationTest : public TestCase
 {
 public:
-    SoftUeHelperTest() : TestCase("Soft-UE Helper Integration Test") {}
-    virtual ~SoftUeHelperTest() {}
+    SoftUeBasicIntegrationTest () : TestCase ("Soft-UE Basic Integration Test") {}
 
 private:
-    void DoRun() override
+    virtual void DoRun (void)
     {
-        // Test Helper creation
-        SoftUeHelper helper;
-        NS_TEST_ASSERT_MSG_EQ(true, true, "SoftUeHelper creation should succeed");
-
-        // Test Helper device installation
+        // 创建节点
         NodeContainer nodes;
-        nodes.Create(2);
-        NetDeviceContainer devices = helper.Install(nodes);
+        nodes.Create (2);
 
-        NS_TEST_ASSERT_MSG_EQ(devices.GetN(), 2, "Should install 2 devices");
-        NS_TEST_ASSERT_MSG_NE(devices.Get(0), nullptr, "First device should not be null");
-        NS_TEST_ASSERT_MSG_NE(devices.Get(1), nullptr, "Second device should not be null");
-
-        // Test device casting
-        Ptr<SoftUeNetDevice> device0 = DynamicCast<SoftUeNetDevice>(devices.Get(0));
-        Ptr<SoftUeNetDevice> device1 = DynamicCast<SoftUeNetDevice>(devices.Get(1));
-        NS_TEST_ASSERT_MSG_NE(device0, nullptr, "Device should be castable to SoftUeNetDevice");
-        NS_TEST_ASSERT_MSG_NE(device1, nullptr, "Device should be castable to SoftUeNetDevice");
-
-        // Test Helper configuration
-        helper.SetDeviceAttribute("MaxPdcCount", UintegerValue(512));
-        helper.SetChannelAttribute("Delay", TimeValue(MilliSeconds(10)));
-
-        // Test that configuration was applied (this would require actual implementation)
-        // For now, just verify the Helper can be configured
-        NS_TEST_ASSERT_MSG_EQ(true, true, "Helper configuration should succeed");
-    }
-};
-
-/**
- * @brief Test Soft-UE Network Device functionality
- */
-class SoftUeNetDeviceTest : public TestCase
-{
-public:
-    SoftUeNetDeviceTest() : TestCase("Soft-UE Network Device Integration Test") {}
-    virtual ~SoftUeNetDeviceTest() {}
-
-private:
-    void DoRun() override
-    {
-        // Create and configure network device
-        Ptr<Node> node = CreateObject<Node>();
+        // 安装Soft-UE设备
         SoftUeHelper helper;
-        Ptr<SoftUeNetDevice> device = helper.Install(node);
+        NetDeviceContainer devices = helper.Install (nodes);
 
-        // Test device initialization
-        NS_TEST_ASSERT_MSG_NE(device, nullptr, "Device should be created");
-        device->Initialize();
-        NS_TEST_ASSERT_MSG_EQ(device->IsInitialized(), true, "Device should be initialized");
+        NS_TEST_ASSERT_MSG_EQ (devices.GetN (), 2, "Not all devices installed");
 
-        // Test device managers
-        Ptr<SesManager> sesManager = device->GetSesManager();
-        Ptr<PdsManager> pdsManager = device->GetPdsManager();
-        NS_TEST_ASSERT_MSG_NE(sesManager, nullptr, "SES manager should be available");
-        NS_TEST_ASSERT_MSG_NE(pdsManager, nullptr, "PDS manager should be available");
-
-        // Test manager linkage
-        NS_TEST_ASSERT_MSG_EQ(sesManager->GetPdsManager(), pdsManager,
-                             "SES manager should reference PDS manager");
-        NS_TEST_ASSERT_MSG_EQ(pdsManager->GetSesManager(), sesManager,
-                             "PDS manager should reference SES manager");
-
-        // Test device statistics
-        SoftUeStats stats = device->GetStatistics();
-        NS_TEST_ASSERT_MSG_EQ(stats.totalPacketsReceived, 0, "Initially should have received 0 packets");
-        NS_TEST_ASSERT_MSG_EQ(stats.totalPacketsTransmitted, 0, "Initially should have transmitted 0 packets");
-
-        // Test device configuration
-        SoftUeConfig config = device->GetConfiguration();
-        NS_TEST_ASSERT_MSG_GT(config.maxPdcCount, 0, "Max PDC count should be positive");
-        NS_TEST_ASSERT_MSG_GT(config.maxPacketSize, 0, "Max packet size should be positive");
-    }
-};
-
-/**
- * @brief Test Soft-UE Channel functionality
- */
-class SoftUeChannelTest : public TestCase
-{
-public:
-    SoftUeChannelTest() : TestCase("Soft-UE Channel Integration Test") {}
-    virtual ~SoftUeChannelTest() {}
-
-private:
-    void DoRun() override
-    {
-        // Create channel
-        Ptr<SoftUeChannel> channel = CreateObject<SoftUeChannel>();
-        NS_TEST_ASSERT_MSG_NE(channel, nullptr, "Channel creation should succeed");
-
-        // Create devices
-        Ptr<Node> node1 = CreateObject<Node>();
-        Ptr<Node> node2 = CreateObject<Node>();
-        SoftUeHelper helper;
-        Ptr<SoftUeNetDevice> device1 = helper.Install(node1);
-        Ptr<SoftUeNetDevice> device2 = helper.Install(node2);
-
-        // Connect devices to channel
-        device1->SetChannel(channel);
-        device2->SetChannel(channel);
-        NS_TEST_ASSERT_MSG_EQ(device1->GetChannel(), channel, "Device1 should be connected to channel");
-        NS_TEST_ASSERT_MSG_EQ(device2->GetChannel(), channel, "Device2 should be connected to channel");
-
-        // Test channel properties
-        channel->SetAttribute("Delay", TimeValue(MilliSeconds(5)));
-        NS_TEST_ASSERT_MSG_EQ(channel->GetDelay(), MilliSeconds(5), "Channel delay should be set");
-
-        // Test device count
-        uint32_t deviceCount = channel->GetNDevices();
-        NS_TEST_ASSERT_MSG_EQ(deviceCount, 2, "Channel should have 2 devices attached");
-    }
-};
-
-/**
- * @brief Test end-to-end data transmission
- */
-class EndToEndTransmissionTest : public TestCase
-{
-public:
-    EndToEndTransmissionTest() : TestCase("End-to-End Transmission Test") {}
-    virtual ~EndToEndTransmissionTest() {}
-
-private:
-    void DoRun() override
-    {
-        // Create two nodes with Soft-UE devices
-        NodeContainer nodes;
-        nodes.Create(2);
-        SoftUeHelper helper;
-        NetDeviceContainer devices = helper.Install(nodes);
-
-        Ptr<SoftUeNetDevice> sender = DynamicCast<SoftUeNetDevice>(devices.Get(0));
-        Ptr<SoftUeNetDevice> receiver = DynamicCast<SoftUeNetDevice>(devices.Get(1));
-
-        // Create test packet
-        Ptr<Packet> packet = Create<Packet>(1024);
-
-        // Test PDC allocation on sender
-        uint16_t pdcId = sender->AllocatePdc(1234, 0, 0, PDS_NEXT_HEADER_ROCE);
-        NS_TEST_ASSERT_MSG_NE(pdcId, 0, "PDC allocation should succeed");
-
-        // Test packet sending (this would require actual implementation)
-        // For now, we verify the infrastructure is in place
-        SoftUeStats senderStats = sender->GetStatistics();
-        SoftUeStats receiverStats = receiver->GetStatistics();
-
-        NS_TEST_ASSERT_MSG_EQ(senderStats.activePdcCount, 1, "Sender should have 1 active PDC");
-
-        // Clean up
-        sender->ReleasePdc(pdcId);
-        senderStats = sender->GetStatistics();
-        NS_TEST_ASSERT_MSG_EQ(senderStats.activePdcCount, 0, "Sender should have 0 active PDC after release");
-    }
-};
-
-/**
- * @brief Test multi-node communication
- */
-class MultiNodeCommunicationTest : public TestCase
-{
-public:
-    MultiNodeCommunicationTest() : TestCase("Multi-Node Communication Test") {}
-    virtual ~MultiNodeCommunicationTest() {}
-
-private:
-    void DoRun() override
-    {
-        // Create multiple nodes
-        const int numNodes = 5;
-        NodeContainer nodes;
-        nodes.Create(numNodes);
-        SoftUeHelper helper;
-        NetDeviceContainer devices = helper.Install(nodes);
-
-        // Test all devices are created
-        NS_TEST_ASSERT_MSG_EQ(devices.GetN(), numNodes, "Should create devices for all nodes");
-
-        // Test each device has proper managers
-        for (uint32_t i = 0; i < devices.GetN(); i++)
+        // 验证设备类型
+        for (uint32_t i = 0; i < devices.GetN (); ++i)
         {
-            Ptr<SoftUeNetDevice> device = DynamicCast<SoftUeNetDevice>(devices.Get(i));
-            NS_TEST_ASSERT_MSG_NE(device, nullptr, "Each device should be valid SoftUeNetDevice");
-
-            Ptr<SesManager> sesManager = device->GetSesManager();
-            Ptr<PdsManager> pdsManager = device->GetPdsManager();
-            NS_TEST_ASSERT_MSG_NE(sesManager, nullptr, "Each device should have SES manager");
-            NS_TEST_ASSERT_MSG_NE(pdsManager, nullptr, "Each device should have PDS manager");
+            Ptr<SoftUeNetDevice> device = devices.Get (i)->GetObject<SoftUeNetDevice> ();
+            NS_TEST_ASSERT_MSG_NE (device, 0, "Device is not a SoftUeNetDevice");
         }
 
-        // Test multiple PDC allocations across nodes
-        std::vector<std::vector<uint16_t>> nodePdcs;
-        for (uint32_t i = 0; i < devices.GetN(); i++)
-        {
-            Ptr<SoftUeNetDevice> device = DynamicCast<SoftUeNetDevice>(devices.Get(i));
-            std::vector<uint16_t> pdcs;
+        // 测试设备属性
+        Ptr<SoftUeNetDevice> device0 = devices.Get (0)->GetObject<SoftUeNetDevice> ();
+        device0->SetAttribute ("MaxPdcCount", UintegerValue (512));
 
-            for (int j = 0; j < 3; j++)
+        UintegerValue maxPdcCount;
+        device0->GetAttribute ("MaxPdcCount", maxPdcCount);
+        NS_TEST_ASSERT_MSG_EQ (maxPdcCount.Get (), 512, "Device attribute not set");
+    }
+};
+
+/**
+ * @brief SES/PDS Manager协作测试
+ */
+class SoftUeManagerCooperationTest : public TestCase
+{
+public:
+    SoftUeManagerCooperationTest () : TestCase ("Soft-UE Manager Cooperation Test") {}
+
+private:
+    virtual void DoRun (void)
+    {
+        // 创建Soft-UE网络设备
+        Ptr<SoftUeNetDevice> device = CreateObject<SoftUeNetDevice> ();
+
+        // 获取管理器实例
+        Ptr<SesManager> sesManager = device->GetSesManager ();
+        Ptr<PdsManager> pdsManager = device->GetPdsManager ();
+
+        NS_TEST_ASSERT_MSG_NE (sesManager, 0, "SES Manager not available");
+        NS_TEST_ASSERT_MSG_NE (pdsManager, 0, "PDS Manager not available");
+
+        // 测试管理器协作
+        // SES配置消息类型
+        sesManager->SetMessageType ("DATA_TRANSFER", SesManager::DATA);
+
+        // PDS配置路由
+        pdsManager->SetRoutingAlgorithm ("SHORTEST_PATH");
+
+        // 创建测试数据包
+        Ptr<Packet> packet = Create<Packet> (1024);
+
+        // 添加SES标签
+        SoftUePacketTag tag;
+        tag.SetMessageType ("DATA_TRANSFER");
+        tag.SetSourceEndpoint (0);
+        tag.SetDestinationEndpoint (1);
+        packet->AddPacketTag (tag);
+
+        // 通过PDS处理数据包
+        bool processed = pdsManager->ProcessPacket (packet);
+        NS_TEST_ASSERT_MSG_EQ (processed, true, "PDS processing failed");
+    }
+};
+
+/**
+ * @brief 多节点通信测试
+ */
+class SoftUeMultiNodeTest : public TestCase
+{
+public:
+    SoftUeMultiNodeTest () : TestCase ("Soft-UE Multi-Node Communication Test") {}
+
+private:
+    virtual void DoRun (void)
+    {
+        // 创建多个节点
+        NodeContainer nodes;
+        nodes.Create (5);
+
+        // 安装Soft-UE设备
+        SoftUeHelper helper;
+        NetDeviceContainer devices = helper.Install (nodes);
+
+        NS_TEST_ASSERT_MSG_EQ (devices.GetN (), 5, "Not all devices installed");
+
+        // 测试节点间通信
+        uint32_t successfulTransmissions = 0;
+        const uint32_t totalTests = 20; // 5 nodes * 4 destinations
+
+        for (uint32_t src = 0; src < nodes.GetN (); ++src)
+        {
+            for (uint32_t dst = 0; dst < nodes.GetN (); ++dst)
             {
-                uint16_t pdcId = device->AllocatePdc(2000 + i * 100 + j, j % 4, 0, PDS_NEXT_HEADER_ROCE);
-                if (pdcId != 0)
+                if (src == dst) continue; // 跳过自己
+
+                Ptr<SoftUeNetDevice> srcDevice = devices.Get (src)->GetObject<SoftUeNetDevice> ();
+                Ptr<Packet> packet = Create<Packet> (512);
+
+                // 设置目标节点
+                SoftUePacketTag tag;
+                tag.SetDestinationEndpoint (dst);
+                packet->AddPacketTag (tag);
+
+                // 发送数据包
+                bool sent = srcDevice->Send (packet, devices.Get (dst)->GetAddress (), 0x0800);
+                if (sent)
                 {
-                    pdcs.push_back(pdcId);
-                }
-            }
-            nodePdcs.push_back(pdcs);
-        }
-
-        // Verify PDCs are allocated
-        int totalPdcs = 0;
-        for (const auto& pdcs : nodePdcs)
-        {
-            totalPdcs += pdcs.size();
-        }
-        NS_TEST_ASSERT_MSG_EQ(totalPdcs, numNodes * 3, "Should allocate all requested PDCs");
-
-        // Clean up
-        for (uint32_t i = 0; i < devices.GetN(); i++)
-        {
-            Ptr<SoftUeNetDevice> device = DynamicCast<SoftUeNetDevice>(devices.Get(i));
-            for (uint16_t pdcId : nodePdcs[i])
-            {
-                device->ReleasePdc(pdcId);
-            }
-        }
-    }
-};
-
-/**
- * @brief Test error handling across components
- */
-class ErrorHandlingIntegrationTest : public TestCase
-{
-public:
-    ErrorHandlingIntegrationTest() : TestCase("Error Handling Integration Test") {}
-    virtual ~ErrorHandlingIntegrationTest() {}
-
-private:
-    void DoRun() override
-    {
-        // Create test setup
-        NodeContainer nodes;
-        nodes.Create(2);
-        SoftUeHelper helper;
-        NetDeviceContainer devices = helper.Install(nodes);
-
-        Ptr<SoftUeNetDevice> device = DynamicCast<SoftUeNetDevice>(devices.Get(0));
-
-        // Test invalid PDC operations
-        uint16_t invalidPdcId = 9999;
-        bool releaseResult = device->ReleasePdc(invalidPdcId);
-        NS_TEST_ASSERT_MSG_EQ(releaseResult, false, "Releasing invalid PDC should fail");
-
-        // Test configuration validation
-        helper.SetDeviceAttribute("MaxPdcCount", UintegerValue(0));  // Invalid value
-        // This should be handled gracefully (would require actual error handling implementation)
-
-        // Test resource exhaustion
-        uint16_t pdcId = device->AllocatePdc(1234, 0, 0, PDS_NEXT_HEADER_ROCE);
-        NS_TEST_ASSERT_MSG_NE(pdcId, 0, "First PDC allocation should succeed");
-
-        // Test error statistics
-        SoftUeStats stats = device->GetStatistics();
-        NS_TEST_ASSERT_MSG_EQ(stats.activePdcCount, 1, "Should have 1 active PDC");
-
-        // Clean up
-        device->ReleasePdc(pdcId);
-    }
-};
-
-/**
- * @brief Test performance integration
- */
-class PerformanceIntegrationTest : public TestCase
-{
-public:
-    PerformanceIntegrationTest() : TestCase("Performance Integration Test") {}
-    virtual ~PerformanceIntegrationTest() {}
-
-private:
-    void DoRun() override
-    {
-        // Create test setup
-        const int numNodes = 10;
-        NodeContainer nodes;
-        nodes.Create(numNodes);
-        SoftUeHelper helper;
-        NetDeviceContainer devices = helper.Install(nodes);
-
-        // Test bulk PDC allocation performance
-        Time startTime = Simulator::Now();
-        std::vector<uint16_t> allPdcs;
-
-        for (uint32_t i = 0; i < devices.GetN(); i++)
-        {
-            Ptr<SoftUeNetDevice> device = DynamicCast<SoftUeNetDevice>(devices.Get(i));
-            for (int j = 0; j < 10; j++)
-            {
-                uint16_t pdcId = device->AllocatePdc(3000 + i * 10 + j, j % 8, 0, PDS_NEXT_HEADER_ROCE);
-                if (pdcId != 0)
-                {
-                    allPdcs.push_back(pdcId);
+                    successfulTransmissions++;
                 }
             }
         }
 
-        Time allocationTime = Simulator::Now();
-        NS_TEST_ASSERT_MSG_EQ(allPdcs.size(), numNodes * 10,
-                             "Should allocate all requested PDCs");
-
-        // Test bulk release performance
-        for (uint32_t i = 0; i < devices.GetN(); i++)
-        {
-            Ptr<SoftUeNetDevice> device = DynamicCast<SoftUeNetDevice>(devices.Get(i));
-            SoftUeStats stats = device->GetStatistics();
-            NS_TEST_ASSERT_MSG_EQ(stats.activePdcCount, 10,
-                                 "Each device should have 10 active PDCs");
-        }
-
-        // Release all PDCs
-        for (uint32_t i = 0; i < devices.GetN(); i++)
-        {
-            Ptr<SoftUeNetDevice> device = DynamicCast<SoftUeNetDevice>(devices.Get(i));
-            uint32_t activeCount = device->GetActivePdcCount();
-            for (uint32_t j = 0; j < activeCount; j++)
-            {
-                // This is a simplified cleanup - actual implementation would track PDC IDs
-                device->ReleasePdc(j + 1);
-            }
-        }
-
-        Time releaseTime = Simulator::Now();
-
-        // Performance assertions
-        Time allocationDuration = allocationTime - startTime;
-        Time releaseDuration = releaseTime - allocationTime;
-
-        NS_TEST_ASSERT_MSG_LT(allocationDuration.GetMicroSeconds(), 50000,
-                             "Bulk PDC allocation should complete quickly");
-        NS_TEST_ASSERT_MSG_LT(releaseDuration.GetMicroSeconds(), 50000,
-                             "Bulk PDC release should complete quickly");
+        // 验证传输成功率
+        double successRate = (double)successfulTransmissions / totalTests * 100.0;
+        NS_TEST_ASSERT_MSG_GT (successRate, 80.0, "Multi-node communication success rate too low");
     }
 };
 
 /**
- * @brief Test protocol stack integration
+ * @brief 端到端数据完整性测试
  */
-class ProtocolStackIntegrationTest : public TestCase
+class SoftUeEndToEndTest : public TestCase
 {
 public:
-    ProtocolStackIntegrationTest() : TestCase("Protocol Stack Integration Test") {}
-    virtual ~ProtocolStackIntegrationTest() {}
+    SoftUeEndToEndTest () : TestCase ("Soft-UE End-to-End Data Integrity Test") {}
 
 private:
-    void DoRun() override
+    virtual void DoRun (void)
     {
-        // Create test setup
+        // 创建源和目标节点
         NodeContainer nodes;
-        nodes.Create(2);
+        nodes.Create (2);
+
         SoftUeHelper helper;
-        NetDeviceContainer devices = helper.Install(nodes);
+        NetDeviceContainer devices = helper.Install (nodes);
 
-        Ptr<SoftUeNetDevice> sender = DynamicCast<SoftUeNetDevice>(devices.Get(0));
-        Ptr<SoftUeNetDevice> receiver = DynamicCast<SoftUeNetDevice>(devices.Get(1));
+        Ptr<SoftUeNetDevice> srcDevice = devices.Get (0)->GetObject<SoftUeNetDevice> ();
+        Ptr<SoftUeNetDevice> dstDevice = devices.Get (1)->GetObject<SoftUeNetDevice> ();
 
-        // Test layer integration
-        Ptr<SesManager> sesManager = sender->GetSesManager();
-        Ptr<PdsManager> pdsManager = sender->GetPdsManager();
+        // 创建测试数据
+        const std::string testData = "Soft-UE Integration Test Data";
+        Ptr<Packet> originalPacket = Create<Packet> ((uint8_t*)testData.c_str (), testData.length ());
 
-        // Test SES initialization
-        sesManager->Initialize();
-        NS_TEST_ASSERT_MSG_EQ(sesManager->HasPendingOperations(), false,
-                             "SES manager should be properly initialized");
+        // 添加测试标签
+        SoftUePacketTag tag;
+        tag.SetMessageType ("INTEGRATION_TEST");
+        tag.SetSourceEndpoint (0);
+        tag.SetDestinationEndpoint (1);
+        originalPacket->AddPacketTag (tag);
 
-        // Test PDS initialization
-        pdsManager->Initialize();
-        NS_TEST_ASSERT_MSG_EQ(pdsManager->GetActivePdcs(), 0,
-                             "PDS manager should be properly initialized");
+        // 发送数据包
+        bool sent = srcDevice->Send (originalPacket, dstDevice->GetAddress (), 0x0800);
+        NS_TEST_ASSERT_MSG_EQ (sent, true, "Packet sending failed");
 
-        // Test inter-layer communication
-        uint16_t pdcId = pdsManager->AllocatePdc(1234, 0, 0, PDS_NEXT_HEADER_ROCE, 1, 2);
-        NS_TEST_ASSERT_MSG_NE(pdcId, 0, "PDC allocation should work through integrated layers");
+        // 验证设备统计
+        uint64_t sentPackets = srcDevice->GetSentPacketCount ();
+        uint64_t receivedPackets = dstDevice->GetReceivedPacketCount ();
 
-        // Test statistics collection across layers
-        std::string pdsStats = pdsManager->GetStatisticsString();
-        std::string sesStats = sesManager->GetStatistics();
-        NS_TEST_ASSERT_MSG_NE(pdsStats.length(), 0, "PDS statistics should be available");
-        NS_TEST_ASSERT_MSG_NE(sesStats.length(), 0, "SES statistics should be available");
-
-        // Test configuration consistency
-        SoftUeConfig config = sender->GetConfiguration();
-        NS_TEST_ASSERT_MSG_GT(config.maxPdcCount, 0, "Configuration should be consistent across layers");
-
-        // Clean up
-        pdsManager->ReleasePdc(pdcId);
+        NS_TEST_ASSERT_MSG_EQ (sentPackets, 1, "Sent packet count incorrect");
+        NS_TEST_ASSERT_MSG_EQ (receivedPackets, 1, "Received packet count incorrect");
     }
 };
 
 /**
- * @brief Soft-UE Integration Test Suite
+ * @brief Soft-UE集成测试套件
  */
 class SoftUeIntegrationTestSuite : public TestSuite
 {
 public:
-    SoftUeIntegrationTestSuite() : TestSuite("soft-ue-integration", Type::SYSTEM)
+    SoftUeIntegrationTestSuite () : TestSuite ("soft-ue-integration", SYSTEM)
     {
-        AddTestCase(new SoftUeHelperTest(), Duration::QUICK);
-        AddTestCase(new SoftUeNetDeviceTest(), Duration::QUICK);
-        AddTestCase(new SoftUeChannelTest(), Duration::QUICK);
-        AddTestCase(new EndToEndTransmissionTest(), Duration::QUICK);
-        AddTestCase(new MultiNodeCommunicationTest(), Duration::MEDIUM);
-        AddTestCase(new ErrorHandlingIntegrationTest(), Duration::QUICK);
-        AddTestCase(new PerformanceIntegrationTest(), Duration::MEDIUM);
-        AddTestCase(new ProtocolStackIntegrationTest(), Duration::QUICK);
+        AddTestCase (new SoftUeBasicIntegrationTest, TestCase::QUICK);
+        AddTestCase (new SoftUeManagerCooperationTest, TestCase::QUICK);
+        AddTestCase (new SoftUeMultiNodeTest, TestCase::QUICK);
+        AddTestCase (new SoftUeEndToEndTest, TestCase::QUICK);
     }
 };
 
-static SoftUeIntegrationTestSuite g_softUeIntegrationTestSuite;
-
-} // namespace ns3
+static SoftUeIntegrationTestSuite softUeIntegrationTestSuite;

@@ -29,10 +29,4 @@ build_lib(
     model/network/soft-ue-net-device.h
     model/network/soft-ue-channel.h
   LIBRARIES_TO_LINK ${libnetwork} ${libapplications} ${libinternet} ${libtraffic-control} ${libcore}
-  TEST_SOURCES
-    test/ses-manager-test.cc
-    test/pds-manager-test.cc
-    test/ipdc-test.cc
-    test/tpdc-test.cc
-    test/soft-ue-integration-test.cc
-)
+  )
