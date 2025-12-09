@@ -38,8 +38,8 @@ SoftUeNetDevice::GetTypeId (void)
                    MakeUintegerAccessor (&SoftUeNetDevice::SetMaxPdcCount, &SoftUeNetDevice::GetMaxPdcCount),
                    MakeUintegerChecker<uint32_t> ())
     .AddAttribute ("ProcessingInterval",
-                   "Packet processing interval",
-                   TimeValue (MilliSeconds (1)),
+                   "Packet processing interval (Data center level latency)",
+                   TimeValue (NanoSeconds (50)), // 50ns - Data center packet processing delay
                    MakeTimeAccessor (&SoftUeNetDevice::SetProcessingInterval, &SoftUeNetDevice::GetProcessingInterval),
                    MakeTimeChecker ())
     .AddAttribute ("MaxPacketSize",

@@ -26,8 +26,8 @@ PdcBase::GetTypeId (void)
                    MakeBooleanAccessor (&PdcBase::SetDetailedLogging),
                    MakeBooleanChecker ())
     .AddAttribute ("ProcessInterval",
-                   "Interval between processing cycles",
-                   TimeValue (MilliSeconds (1)),
+                   "Interval between processing cycles (Data center level latency)",
+                   TimeValue (NanoSeconds (25)), // 25ns - Data center PDC processing delay
                    MakeTimeAccessor (&PdcBase::m_processInterval),
                    MakeTimeChecker ())
     .AddAttribute ("PdcId",

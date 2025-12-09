@@ -25,8 +25,8 @@ SoftUeChannel::GetTypeId (void)
                                             &SoftUeChannel::GetDataRate),
                    MakeDataRateChecker ())
     .AddAttribute ("Delay",
-                   "The propagation delay of the channel",
-                   TimeValue (MicroSeconds (10)),
+                   "The propagation delay of the channel (Data center level latency)",
+                   TimeValue (NanoSeconds (100)), // 100ns - Data center internal transmission delay
                    MakeTimeAccessor (&SoftUeChannel::SetDelay,
                                         &SoftUeChannel::GetDelay),
                    MakeTimeChecker ())
@@ -44,7 +44,7 @@ SoftUeChannel::GetTypeId (void)
 
 SoftUeChannel::SoftUeChannel ()
   : m_dataRate ("1Gbps"),
-    m_delay (MicroSeconds (10))
+    m_delay (NanoSeconds (100)) // Data center internal transmission delay
 {
   NS_LOG_FUNCTION (this);
 }

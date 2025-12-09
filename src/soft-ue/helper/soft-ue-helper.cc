@@ -25,7 +25,7 @@ SoftUeHelper::SoftUeHelper ()
   // Set default device attributes
   m_deviceFactory.Set ("EnableStatistics", BooleanValue (true));
   m_deviceFactory.Set ("MaxPdcCount", UintegerValue (256));
-  m_deviceFactory.Set ("ProcessingInterval", TimeValue (MilliSeconds (1)));
+  m_deviceFactory.Set ("ProcessingInterval", TimeValue (NanoSeconds (50))); // Data center processing delay
   m_deviceFactory.Set ("MaxPacketSize", UintegerValue (1500));
 }
 
