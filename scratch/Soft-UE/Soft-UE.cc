@@ -268,7 +268,7 @@ SoftUeFullApp::ScheduleSend ()
 {
     if (m_packetsSent < m_numPackets)
     {
-        Time tNext (MilliSeconds (100)); // Send every 100ms
+        Time tNext (NanoSeconds (500)); // Send every 500ns - Data center level latency
         m_sendEvent = Simulator::Schedule (tNext, &SoftUeFullApp::SendPacket, this);
     }
 }
@@ -396,7 +396,11 @@ SoftUeFullApp::HandleRead (Ptr<NetDevice> device, Ptr<const Packet> packet, uint
 
     m_packetsReceived++;
 
-    // Enhanced statistics
+    // Enhanced statistics - record first packet time if server
+    if (m_isServer && m_firstPacketTime == Seconds (0))
+    {
+        m_firstPacketTime = Simulator::Now ();
+    }
     m_totalBytesReceived += packet->GetSize ();
     m_lastPacketTime = Simulator::Now ();
 
@@ -507,21 +511,22 @@ SoftUeFullApp::GetStatistics () const
         << "  Average Packet Size: " << (m_packetsSent > 0 ?
                 (m_totalBytesSent / m_packetsSent) : 0) << " bytes\n";
 
-    // Timing analysis
+    // Timing analysis (Data center level time measurement)
     if (m_firstPacketTime != Seconds (0) && m_lastPacketTime != Seconds (0))
     {
         Time totalTime = m_lastPacketTime - m_firstPacketTime;
         double throughputMbps = 0.0;
-        if (totalTime.GetMilliSeconds () > 0)
+        if (totalTime.GetNanoSeconds () > 0)
         {
-            throughputMbps = (m_totalBytesReceived * 8.0) / (totalTime.GetMilliSeconds () * 1000.0);
+            // Use nanosecond precision for throughput calculation
+            throughputMbps = (m_totalBytesReceived * 8.0 * 1000000000.0) / (totalTime.GetNanoSeconds ());
         }
 
-        oss << "  Total Transfer Time: " << totalTime.GetMilliSeconds () << " ms\n"
+        oss << "  Total Transfer Time: " << totalTime.GetNanoSeconds () << " ns\n"
             << "  Throughput: " << std::fixed << std::setprecision (3)
             << throughputMbps << " Mbps\n"
-            << "  Packet Rate: " << (totalTime.GetMilliSeconds () > 0 ?
-                (1000.0 * m_packetsReceived / totalTime.GetMilliSeconds ()) : 0.0) << " pps\n";
+            << "  Packet Rate: " << (totalTime.GetNanoSeconds () > 0 ?
+                (1000000000.0 * m_packetsReceived / totalTime.GetNanoSeconds ()) : 0.0) << " pps\n";
     }
 
     // Error statistics
@@ -675,9 +680,9 @@ main (int argc, char *argv[])
     Address serverAddress = serverMacAddr;
     NS_LOG_INFO ("Server address: " << serverAddress << " (FEP=2)");
 
-    // Calculate required time based on number of packets
-    double requiredClientTime = 2.0 + (numPackets * 0.1) + 2.0; // Start at 2s, 100ms per packet, +2s buffer
-    double requiredServerTime = requiredClientTime + 2.0; // Server runs longer
+    // Calculate required time based on number of packets (Data center level latency)
+    double requiredClientTime = 2.0 + (numPackets * 0.0000005) + 0.001; // Start at 2s, 500ns per packet, +1ms buffer
+    double requiredServerTime = requiredClientTime + 0.001; // Server runs longer, +1ms buffer
 
     // Server application (node 1)
     Ptr<SoftUeFullApp> serverApp = CreateObject<SoftUeFullApp> ();
