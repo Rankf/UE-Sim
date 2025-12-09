@@ -71,9 +71,16 @@ SesManager::Initialize (void)
     NS_LOG_FUNCTION (this);
     NS_LOG_DEBUG ("Initializing SES Manager");
 
-    // Initialize internal components and state
-    // TODO: Add specific initialization logic as needed
+    // Initialize MSN table for message tracking
+    m_msnTable = Create<MsnTable> ();
+    if (!m_msnTable)
+    {
+        NS_LOG_ERROR ("Failed to create MSN table");
+        return;
+    }
+    NS_LOG_DEBUG ("MSN table created successfully");
 
+    // Initialize internal components and state
     NS_LOG_DEBUG ("SES Manager initialization completed");
 }
 

@@ -184,6 +184,7 @@ SoftUeChannel::Transmit (Ptr<Packet> packet, Ptr<NetDevice> src, uint32_t source
     }
 
   // Trace transmission
+  NS_LOG_DEBUG ("SoftUeChannel: Transmitting packet FEP " << sourceFep << " -> FEP " << destFep);
   m_txTrace (packet, sourceFep, destFep);
 
   // Transmit to all destination devices

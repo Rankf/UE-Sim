@@ -291,16 +291,10 @@ SoftUeNetDevice::Send (Ptr<Packet> packet, const Address& dest, uint16_t protoco
   request.som = true;
   request.eom = true;
 
-  // Convert SesPdsRequest to ExtendedOperationMetadata properly
-  ExtendedOperationMetadata metadata;
-  metadata.SetSourceEndpoint (GetNode ()->GetId (), m_localFep);
+  NS_LOG_DEBUG ("SoftUeDevice: Sending packet FEP " << m_localFep << " -> FEP " << destFep);
 
-  // For now, use a simple mapping for destination endpoint
-  // In a full implementation, this would extract the proper endpoint from the address
-  static uint16_t destCounter = 1;
-  metadata.SetDestinationEndpoint (0, destCounter++);
-
-  bool success = m_sesManager->ProcessSendRequest (Create<ExtendedOperationMetadata> (metadata));
+  // Directly process through PDS manager for transmission
+  bool success = m_pdsManager->ProcessSesRequest (request);
 
   if (success)
     {
@@ -458,6 +452,9 @@ SoftUeNetDevice::ReceivePacket (Ptr<Packet> packet, uint32_t sourceFep, uint32_t
 
   // Trace packet reception
   m_macRxTrace (packet, CreateAddressFromFep (sourceFep));
+
+  // Process the receive queue to notify upper layers
+  ProcessReceiveQueue ();
 }
 
 SoftUeStats

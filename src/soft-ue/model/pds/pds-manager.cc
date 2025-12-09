@@ -1,9 +1,11 @@
 #include "pds-manager.h"
 #include "../pdc/pdc-base.h"
 #include "../network/soft-ue-net-device.h"
+#include "../network/soft-ue-channel.h"
 #include "ns3/log.h"
 #include "ns3/simulator.h"
 #include "ns3/assert.h"
+#include "ns3/mac48-address.h"
 #include <algorithm>
 
 namespace ns3 {
@@ -107,14 +109,75 @@ PdsManager::ProcessSesRequest (const SesPdsRequest& request)
       return false;
     }
 
-  // Increment received packets count
+  // Validate network device
+  if (!m_netDevice)
+    {
+      NS_LOG_ERROR ("Network device not available for transmission");
+      if (m_statistics && m_statisticsEnabled)
+        {
+          m_statistics->IncrementErrors (PdsErrorCode::RESOURCE_EXHAUSTED);
+        }
+      return false;
+    }
+
+  // Create destination address from destination FEP
+  uint8_t macBytes[6];
+  macBytes[0] = 0x02;
+  macBytes[1] = 0x06;
+  macBytes[2] = 0x00;
+  macBytes[3] = 0x00;
+  macBytes[4] = (request.dst_fep >> 8) & 0xFF;  // High byte of FEP
+  macBytes[5] = request.dst_fep & 0xFF;         // Low byte of FEP
+
+  Mac48Address destMacAddr;
+  destMacAddr.CopyFrom (macBytes);
+  Address destAddress = destMacAddr;
+
+  NS_LOG_INFO ("Transmitting packet to FEP " << request.dst_fep
+                << " at address " << destAddress);
+
+  // Actually send the packet through the channel
+  bool success = false;
+  Ptr<Channel> baseChannel = m_netDevice->GetChannel ();
+  if (baseChannel)
+    {
+      Ptr<SoftUeChannel> channel = DynamicCast<SoftUeChannel> (baseChannel);
+      if (channel)
+        {
+          // Send through channel directly
+          channel->Transmit (request.packet, m_netDevice, request.src_fep, request.dst_fep);
+          success = true;
+          NS_LOG_DEBUG ("Packet sent successfully through channel");
+        }
+      else
+        {
+          NS_LOG_ERROR ("Channel is not a SoftUeChannel");
+          if (m_statistics && m_statisticsEnabled)
+            {
+              m_statistics->IncrementErrors (PdsErrorCode::PROTOCOL_ERROR);
+            }
+          return false;
+        }
+    }
+  else
+    {
+      NS_LOG_ERROR ("No channel available for transmission");
+      if (m_statistics && m_statisticsEnabled)
+        {
+          m_statistics->IncrementErrors (PdsErrorCode::RESOURCE_EXHAUSTED);
+        }
+      return false;
+    }
+
+  // Increment received and sent packets count
   if (m_statistics && m_statisticsEnabled)
     {
       m_statistics->IncrementReceivedPackets ();
+      m_statistics->IncrementSentPackets ();
     }
 
-  NS_LOG_DEBUG ("Processed SES request successfully");
-  return true;
+  NS_LOG_DEBUG ("Processed SES request and transmitted packet successfully");
+  return success;
 }
 
 bool
