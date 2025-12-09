@@ -231,7 +231,8 @@ public:
      * @param isFirstPacket True if first packet of message
      * @return true if update was successful
      */
-    bool UpdateEntry (uint64_t jobId, uint64_t psn, uint32_t packetLength, bool isEom, bool isFirstPacket);
+    bool UpdateEntry (uint64_t jobId, uint64_t psn, uint32_t packetLength,
+                      bool isEom, bool isFirstPacket);
 
     /**
      * @brief Validate PSN for a job

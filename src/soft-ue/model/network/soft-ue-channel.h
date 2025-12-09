@@ -115,7 +115,8 @@ public:
      * @param sourceFep Source fabric endpoint
      * @param destFep Destination fabric endpoint (0 for broadcast)
      */
-    void Transmit (Ptr<Packet> packet, Ptr<NetDevice> src, uint32_t sourceFep, uint32_t destFep = 0);
+    void Transmit (Ptr<Packet> packet, Ptr<NetDevice> src, uint32_t sourceFep,
+                  uint32_t destFep = 0);
 
     // Traced callbacks
     TracedCallback<Ptr<const Packet>, uint32_t, uint32_t> m_txTrace;        ///< Transmit trace (packet, srcFep, destFep)
@@ -132,8 +133,10 @@ private:
     Time m_delay;                                   ///< Propagation delay
     std::vector<Ptr<NetDevice>> m_devices;         ///< Connected devices
 
-    void ReceivePacket (Ptr<Packet> packet, Ptr<NetDevice> dest, uint32_t sourceFep, uint32_t destFep);
-    void ScheduleReceive (Ptr<Packet> packet, Ptr<NetDevice> dest, uint32_t sourceFep, uint32_t destFep, Time delay);
+    void ReceivePacket (Ptr<Packet> packet, Ptr<NetDevice> dest, uint32_t sourceFep,
+                       uint32_t destFep);
+    void ScheduleReceive (Ptr<Packet> packet, Ptr<NetDevice> dest, uint32_t sourceFep,
+                          uint32_t destFep, Time delay);
     Time CalculateTransmissionTime (Ptr<Packet> packet) const;
     uint32_t GetDestinationFepForDevice (Ptr<NetDevice> device) const;
 };

@@ -41,38 +41,38 @@ main (int argc, char *argv[])
 {
     LogComponentEnable("PdsManagerTest", LOG_LEVEL_INFO);
 
-    NS_LOG_INFO("=== PDS Manager 核心模块测试 ===");
+    NS_LOG_INFO("=== PDS Manager Core Module Test ===");
 
-    // 创建PDS管理器
+    // Create PDS Manager
     Ptr<PdsManager> pdsManager = CreateObject<PdsManager> ();
 
-    // 测试PDS管理器创建
+    // Test PDS Manager creation
     if (pdsManager == nullptr)
     {
         NS_LOG_ERROR("Failed to create PDS Manager");
         return 1;
     }
-    NS_LOG_INFO("✓ PDS Manager创建成功");
+    NS_LOG_INFO("✓ PDS Manager created successfully");
 
-    // 测试初始化
+    // Test initialization
     pdsManager->Initialize ();
-    NS_LOG_INFO("✓ PDS Manager初始化成功");
+    NS_LOG_INFO("✓ PDS Manager initialized successfully");
 
-    // 获取初始统计信息
+    // Get initial statistics
     auto initialStats = pdsManager->GetStatistics ();
     if (initialStats == nullptr)
     {
         NS_LOG_ERROR("Failed to get PDS statistics");
         return 1;
     }
-    NS_LOG_INFO("✓ 统计系统初始化成功");
-    NS_LOG_INFO("初始统计: " << initialStats->GetStatistics ());
+    NS_LOG_INFO("✓ Statistics system initialized successfully");
+    NS_LOG_INFO("Initial statistics: " << initialStats->GetStatistics ());
 
-    // 创建测试请求
+    // Create test request
     SesPdsRequest testRequest;
     testRequest.src_fep = 0x12345678;
     testRequest.dst_fep = 0x87654321;
-    testRequest.mode = 0; // 简单模式
+    testRequest.mode = 0; // Simple mode
     testRequest.rod_context = 0x0001;
     testRequest.next_hdr = PDSNextHeader::UET_HDR_REQUEST_STD;
     testRequest.tc = 0x01;
@@ -85,34 +85,34 @@ main (int argc, char *argv[])
     testRequest.som = true;
     testRequest.eom = false;
 
-    // 创建测试数据包
+    // Create test packet
     testRequest.packet = Create<Packet> (testRequest.pkt_len);
 
-    // 测试SES请求处理
+    // Test SES request processing
     bool processed = pdsManager->ProcessSesRequest (testRequest);
-    NS_LOG_INFO("✓ SES请求处理: " << (processed ? "成功" : "失败"));
+    NS_LOG_INFO("✓ SES request processing: " << (processed ? "success" : "failure"));
 
-    // 获取最终统计信息
+    // Get final statistics
     auto finalStats = pdsManager->GetStatistics ();
-    NS_LOG_INFO("✓ 统计系统运行正常");
-    NS_LOG_INFO("最终统计: " << finalStats->GetStatistics ());
+    NS_LOG_INFO("✓ Statistics system operating normally");
+    NS_LOG_INFO("Final statistics: " << finalStats->GetStatistics ());
 
-    // 测试统计字符串
+    // Test statistics string
     std::string statsString = pdsManager->GetStatisticsString ();
     if (statsString.length () == 0)
     {
         NS_LOG_ERROR("Statistics string should not be empty");
         return 1;
     }
-    NS_LOG_INFO("✓ 统计报告生成成功");
+    NS_LOG_INFO("✓ Statistics report generated successfully");
 
-    // 重置统计
+    // Reset statistics
     pdsManager->ResetStatistics ();
-    NS_LOG_INFO("✓ 统计系统重置成功");
+    NS_LOG_INFO("✓ Statistics system reset successfully");
 
-    NS_LOG_INFO("=== PDS Manager 测试完成 ===");
-    NS_LOG_INFO("状态: ✓ 所有基本功能正常");
-    NS_LOG_INFO("验证: ✓ PDS管理器核心功能可用");
+    NS_LOG_INFO("=== PDS Manager Test Complete ===");
+    NS_LOG_INFO("Status: ✓ All basic functions operational");
+    NS_LOG_INFO("Verification: ✓ PDS Manager core functionality available");
 
     return 0;
 }

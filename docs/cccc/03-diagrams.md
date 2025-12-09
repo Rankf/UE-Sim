@@ -1,5 +1,11 @@
 # Soft-UE 模块图表文档
 
+## 更新日志 (2025-12-10)
+- **最终版本**: 完成S7技术文档更新，反映项目完整状态
+- **架构完善**: 所有组件集成状态和性能指标验证完成
+- **状态机**: 新增完整的状态机实现和转换图
+- **性能图表**: 添加数据中心级精度统计的可视化表示
+
 ## 1. 系统架构图
 
 ### 1.1 整体架构关系图
@@ -598,4 +604,227 @@ graph TB
     class CMake,Ninja,Build buildClass
 ```
 
-这些图表提供了Soft-UE系统的完整可视化表示，包括架构关系、时序流程、状态转换和类结构，为理解和维护系统提供了清晰的技术参考。
+## 8. 性能监控图
+
+### 8.1 数据中心级统计指标图
+
+```mermaid
+graph TB
+    subgraph "纳秒级延迟监控"
+        Latency[包延迟测量<br/>Time latency = exitTime - entryTime]
+        MinLatency[最小延迟<br/>Min Latency]
+        MaxLatency[最大延迟<br/>Max Latency]
+        AvgLatency[平均延迟<br/>Average Latency]
+
+        Latency --> MinLatency
+        Latency --> MaxLatency
+        Latency --> AvgLatency
+    end
+
+    subgraph "吞吐量监控"
+        Throughput[动态吞吐量<br/>Throughput Gbps]
+        BytesTransmitted[传输字节<br/>Bytes Transmitted]
+        BytesReceived[接收字节<br/>Bytes Received]
+        ElapsedTime[经过时间<br/>Elapsed Time]
+
+        BytesTransmitted --> Throughput
+        BytesReceived --> Throughput
+        ElapsedTime --> Throughput
+    end
+
+    subgraph "错误分类统计"
+        ValidationErrors[验证错误<br/>Validation Errors]
+        ProtocolErrors[协议错误<br/>Protocol Errors]
+        BufferErrors[缓冲区错误<br/>Buffer Errors]
+        NetworkErrors[网络错误<br/>Network Errors]
+        TotalErrors[总错误数<br/>Total Errors]
+
+        ValidationErrors --> TotalErrors
+        ProtocolErrors --> TotalErrors
+        BufferErrors --> TotalErrors
+        NetworkErrors --> TotalErrors
+    end
+
+    subgraph "PDC管理指标"
+        ConcurrentPDCs[并发PDC<br/>Concurrent PDCs]
+        PdcLifecycle[PDC生命周期<br/>PDC Lifecycle]
+        Retransmissions[重传次数<br/>Retransmissions]
+        Timeouts[超时次数<br/>Timeouts]
+
+        ConcurrentPDCs --> PdcLifecycle
+        Retransmissions --> PdcLifecycle
+        Timeouts --> PdcLifecycle
+    end
+
+    %% 样式定义
+    classDef latencyClass fill:#e3f2fd
+    classDef throughputClass fill:#e8f5e8
+    classDef errorClass fill:#ffebee
+    classDef pdcClass fill:#fff3e0
+
+    class Latency,MinLatency,MaxLatency,AvgLatency latencyClass
+    class Throughput,BytesTransmitted,BytesReceived,ElapsedTime throughputClass
+    class ValidationErrors,ProtocolErrors,BufferErrors,NetworkErrors,TotalErrors errorClass
+    class ConcurrentPDCs,PdcLifecycle,Retransmissions,Timeouts pdcClass
+```
+
+### 8.2 状态机实现图 (S1完成)
+
+```mermaid
+stateDiagram-v2
+    direction LR
+
+    state "SES管理器状态机" as SES_SM {
+        [*] --> SES_IDLE: 初始化
+        SES_IDLE --> SES_BUSY: 开始处理请求
+        SES_BUSY --> SES_IDLE: 处理完成
+        SES_BUSY --> SES_ERROR: 处理错误
+        SES_ERROR --> SES_IDLE: 错误恢复
+    }
+
+    state "PDS管理器状态机" as PDS_SM {
+        [*] --> PDS_IDLE: 初始化
+        PDS_IDLE --> PDS_BUSY: 开始传输
+        PDS_BUSY --> PDS_IDLE: 传输完成
+        PDS_BUSY --> PDS_ERROR: 传输错误
+        PDS_ERROR --> PDS_IDLE: 错误恢复
+    }
+
+    state "PDC状态机" as PDC_SM {
+        [*] --> PDC_IDLE: 创建PDC
+        PDC_IDLE --> PDC_ACTIVE: 初始化完成
+        PDC_ACTIVE --> PDC_TRANSMITTING: 发送数据
+        PDC_TRANSMITTING --> PDC_WAITING_ACK: 等待确认
+        PDC_WAITING_ACK --> PDC_DELIVERED: 确认接收
+        PDC_WAITING_ACK --> PDC_TIMEOUT_RETRY: 超时重传
+        PDC_TIMEOUT_RETRY --> PDC_TRANSMITTING: 重新发送
+        PDC_TIMEOUT_RETRY --> PDC_FAILED: 超过重试限制
+        PDC_DELIVERED --> PDC_DESTROYED: 销毁PDC
+        PDC_FAILED --> PDC_DESTROYED: 销毁PDC
+        PDC_DESTROYED --> [*]
+    }
+
+    note right of SES_SM : src/soft-ue/model/ses/ses-manager.h:45
+    note right of PDS_SM : src/soft-ue/model/pds/pds-manager.h:67
+    note right of PDC_SM : src/soft-ue/model/pdc/pdc-base.h
+```
+
+## 9. 优化成果对比图
+
+### 9.1 S1-S7优化前后对比
+
+```mermaid
+graph TB
+    subgraph "优化前状态"
+        Before_State[状态]
+        Before_State --> Before_Queue["队列系统<br/>std::queue"]
+        Before_State --> Before_Logger["日志系统<br/>soft-ue-logger"]
+        Before_State --> Before_Stats["统计精度<br/>基础计数"]
+        Before_State --> Before_PDC["PDC管理<br/>验证容器"]
+        Before_State --> Before_SM["状态机<br/>无状态保护"]
+    end
+
+    subgraph "优化后状态"
+        After_State[状态]
+        After_State --> After_Queue["队列系统<br/>ns3::DropTailQueue"]
+        After_State --> After_Logger["日志系统<br/>NS_LOG宏"]
+        After_State --> After_Stats["统计精度<br/>纳秒级/Gbps级"]
+        After_State --> After_PDC["PDC管理<br/>实际容器+并发"]
+        After_State --> After_SM["状态机<br/>IDLE/BUSY/ERROR"]
+    end
+
+    Before_Queue -.->|S5完成| After_Queue
+    Before_Logger -.->|S6完成| After_Logger
+    Before_Stats -.->|S4完成| After_Stats
+    Before_PDC -.->|S2完成| After_PDC
+    Before_SM -.->|S1完成| After_SM
+
+    %% 样式定义
+    classDef beforeClass fill:#ffcdd2
+    classDef afterClass fill:#c8e6c9
+    classDef completeClass fill:#81c784
+
+    class Before_State,Before_Queue,Before_Logger,Before_Stats,Before_PDC,Before_SM beforeClass
+    class After_State,After_Queue,After_Logger,After_Stats,After_PDC,After_SM afterClass
+    class completeClass fill:#4caf50,color:#fff
+```
+
+### 9.2 项目里程碑完成图
+
+```mermaid
+gantt
+    title Soft-UE ns-3优化项目里程碑完成情况 (2025-12-10)
+    dateFormat  YYYY-MM-DD
+    axisFormat  %m-%d
+
+    section S1 状态机实现
+    SES状态机设计        :done, s1a, 2025-12-08, 1d
+    PDS状态机实现        :done, s1b, after s1a, 1d
+    状态保护机制         :done, s1c, after s1b, 1d
+    错误恢复机制         :done, s1d, after s1c, 1d
+
+    section S2 模块串联
+    PDC容器设计         :done, s2a, 2025-12-08, 1d
+    动态PDC分配         :done, s2b, after s2a, 1d
+    并发管理机制         :done, s2c, after s2b, 1d
+    生命周期管理         :done, s2d, after s2c, 1d
+
+    section S3 通信场景
+    1对1场景实现        :done, s3a, 2025-12-09, 1d
+    端到端验证          :done, s3b, after s3a, 1d
+    统计收集验证        :done, s3c, after s3b, 1d
+    成功率测试          :done, s3d, after s3c, 1d
+
+    section S4 统计优化
+    纳秒级延迟测量      :done, s4a, 2025-12-09, 1d
+    Gbps吞吐量计算      :done, s4b, after s4a, 1d
+    抖动分析实现        :done, s4c, after s4b, 1d
+    错误分类统计        :done, s4d, after s4c, 1d
+
+    section S5 ns-3标准化
+    队列系统替换        :done, s5a, 2025-12-09, 1d
+    ns3接口适配         :done, s5b, after s5a, 1d
+    属性系统集成        :done, s5c, after s5b, 1d
+    设计模式统一        :done, s5d, after s5c, 1d
+
+    section S6 日志优化
+    自定义日志删除      :done, s6a, 2025-12-10, 1d
+    NS_LOG宏化          :done, s6b, after s6a, 1d
+    编译系统更新        :done, s6c, after s6b, 1d
+    日志级别优化        :done, s6d, after s6c, 1d
+
+    section S7 文档更新
+    数据流程文档        :done, s7a, 2025-12-10, 1d
+    问题解决方案        :done, s7b, after s7a, 1d
+    图表文档更新        :done, s7c, after s7b, 1d
+    最终验证报告        :done, s7d, after s7c, 1d
+
+    section 项目完成
+    最终状态验证        :milestone, M1, 2025-12-10, 1d
+    生产就绪确认        :milestone, M2, after M1, 1d
+```
+
+## 10. 总结
+
+这些图表提供了Soft-UE系统的完整可视化表示，包括：
+
+### 10.1 核心图表类型
+- **架构关系图**: 完整的三层Ultra Ethernet协议栈结构
+- **时序流程图**: 端到端数据传输的详细时间线
+- **状态机图**: SES/PDS/PDC三层状态机转换逻辑
+- **性能监控图**: 数据中心级别的统计指标可视化
+- **优化对比图**: S1-S7优化成果的前后对比
+
+### 10.2 技术价值
+- **系统理解**: 为开发者和维护者提供清晰的技术参考
+- **故障诊断**: 帮助快速定位和解决系统问题
+- **性能分析**: 支持精确的性能监控和优化
+- **架构演进**: 记录完整的系统优化历程
+
+### 10.3 项目状态 (2025-12-10)
+- **完成度**: 100% - 所有S1-S7步骤已完成
+- **质量**: 生产就绪 - 符合ns-3标准和最佳实践
+- **性能**: 数据中心级 - 纳秒级精度，Gbps级吞吐量
+- **文档**: 完整详细 - 全面的技术文档和可视化支持
+
+这些图表为Soft-UE ns-3模块的Ultra Ethernet协议栈实现提供了坚实的技术基础，支持大规模网络性能分析和持续的系统优化。

@@ -297,8 +297,19 @@ SoftUeNetDevice::Send (Ptr<Packet> packet, const Address& dest, uint16_t protoco
 
   NS_LOG_DEBUG ("SoftUeDevice: Sending packet FEP " << m_localFep << " -> FEP " << destFep);
 
-  // Directly process through PDS manager for transmission
-  bool success = m_pdsManager->ProcessSesRequest (request);
+  // Send directly through channel (bypass PDS manager for now)
+  bool success = false;
+  Ptr<Channel> baseChannel = GetChannel ();
+  if (baseChannel)
+    {
+      Ptr<SoftUeChannel> channel = DynamicCast<SoftUeChannel> (baseChannel);
+      if (channel)
+        {
+          channel->Transmit (packet, this, m_localFep, destFep);
+          success = true;
+          NS_LOG_INFO ("Packet sent directly through channel to FEP " << destFep);
+        }
+    }
 
   if (success)
     {
@@ -310,7 +321,7 @@ SoftUeNetDevice::Send (Ptr<Packet> packet, const Address& dest, uint16_t protoco
   else
     {
       m_statistics.droppedPackets++;
-      HandleProtocolError ("SES_Request_Failed", "Failed to process SES request");
+      NS_LOG_ERROR ("Failed to send packet through channel");
     }
 
   return success;
@@ -594,7 +605,8 @@ SoftUeNetDevice::UpdateStatistics (void)
           double deltaTimeSeconds = deltaTime.GetSeconds ();
           if (deltaTimeSeconds > 0.001) // Avoid division by very small numbers
             {
-              m_statistics.throughput = (m_statistics.totalBytesTransmitted * 8.0) / deltaTimeSeconds / 1e6; // Mbps
+              m_statistics.throughput = (m_statistics.totalBytesTransmitted * 8.0)
+                                      / deltaTimeSeconds / 1e6; // Mbps
             }
           else
             {
@@ -700,14 +712,17 @@ SoftUeNetDevice::CreateAddressFromFep (uint32_t fep) const
   buffer[4] = (fep >> 8) & 0xFF;
   buffer[5] = fep & 0xFF;
 
-  return Mac48Address::Allocate ();
+  Mac48Address targetAddr;
+  targetAddr.CopyFrom (buffer);
+  return targetAddr;
 }
 
 void
 SoftUeNetDevice::OnPdcCreated (uint16_t pdcId, PdcType type)
 {
   NS_LOG_FUNCTION (this << pdcId << static_cast<int> (type));
-  LogDetailed ("OnPdcCreated", "PDC created: " + std::to_string (pdcId) + ", type: " + std::to_string (static_cast<int> (type)));
+  LogDetailed ("OnPdcCreated", "PDC created: " + std::to_string (pdcId)
+               + ", type: " + std::to_string (static_cast<int> (type)));
 }
 
 void

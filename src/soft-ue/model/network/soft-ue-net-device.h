@@ -156,7 +156,8 @@ public:
     virtual bool IsPointToPoint (void) const override;
     virtual bool IsBridge (void) const override;
     virtual bool Send (Ptr<Packet> packet, const Address& dest, uint16_t protocolNumber) override;
-    virtual bool SendFrom (Ptr<Packet> packet, const Address& source, const Address& dest, uint16_t protocolNumber) override;
+    virtual bool SendFrom (Ptr<Packet> packet, const Address& source, const Address& dest,
+                         uint16_t protocolNumber) override;
     virtual Ptr<Node> GetNode (void) const override;
     virtual void SetNode (Ptr<Node> node) override;
     virtual bool NeedsArp (void) const override;
@@ -267,6 +268,9 @@ public:
     uint16_t GetMaxPacketSize (void) const;
     void SetMaxPacketSize (uint16_t size);
 
+    // Public utility methods
+    Address CreateAddressFromFep (uint32_t fep) const;
+
     // Traced callbacks
     TracedCallback<Ptr<Packet>, const Address&> m_macTxTrace;        ///< MAC transmit trace
     TracedCallback<Ptr<Packet>, const Address&> m_macRxTrace;        ///< MAC receive trace
@@ -333,7 +337,6 @@ private:
     bool HandleProtocolError (const std::string& error, const std::string& details);
     void NotifyLinkChange (void);
     uint16_t ExtractFepFromAddress (const Address& addr) const;
-    Address CreateAddressFromFep (uint32_t fep) const;
     void OnPdcCreated (uint16_t pdcId, PdcType type);
     void OnPdcDestroyed (uint16_t pdcId);
 };

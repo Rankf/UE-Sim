@@ -179,7 +179,8 @@ enum class PdsErrorCode : uint8_t
     PDC_FULL = 2,         ///< PDC table is full
     INVALID_PACKET = 3,   ///< Invalid packet format
     RESOURCE_EXHAUSTED = 4, ///< PDS resources exhausted
-    PROTOCOL_ERROR = 5   ///< Protocol violation
+    PROTOCOL_ERROR = 5,  ///< Protocol violation
+    INTERNAL_ERROR = 6   ///< Internal error
 };
 
 /**
@@ -248,6 +249,38 @@ public:
      */
     std::string GetStatistics (void) const;
 
+    /**
+     * @brief Record packet transmission with timing
+     * @param bytes Number of bytes transmitted
+     * @param latency Packet transmission latency in nanoseconds
+     */
+    void RecordPacketTransmission (uint64_t bytes, double latency);
+
+    /**
+     * @brief Record packet reception with timing
+     * @param bytes Number of bytes received
+     * @param latency Packet reception latency in nanoseconds
+     */
+    void RecordPacketReception (uint64_t bytes, double latency);
+
+    /**
+     * @brief Get calculated throughput in Mbps
+     * @return Throughput in megabits per second
+     */
+    double GetThroughputMbps (void) const;
+
+    /**
+     * @brief Get average latency in nanoseconds
+     * @return Average latency
+     */
+    double GetAverageLatencyNs (void) const;
+
+    /**
+     * @brief Get jitter in nanoseconds
+     * @return Jitter (standard deviation of delays)
+     */
+    double GetJitterNs (void) const;
+
 private:
     uint64_t m_receivedPackets;      ///< Total packets received
     uint64_t m_sentPackets;          ///< Total packets sent
@@ -259,6 +292,16 @@ private:
     uint64_t m_invalidPacketCount;   ///< Invalid packet errors
     uint64_t m_resourceExhaustedCount; ///< Resource exhaustion errors
     uint64_t m_protocolErrorCount;   ///< Protocol violation errors
+
+    // Data center level performance metrics
+    uint64_t m_totalBytesReceived;   ///< Total bytes received
+    uint64_t m_totalBytesSent;       ///< Total bytes sent
+    Time m_firstPacketTime;          ///< First packet timestamp
+    Time m_lastPacketTime;           ///< Last packet timestamp
+    std::vector<Time> m_packetDelays; ///< Per-packet delays for jitter analysis
+    double m_minLatency;             ///< Minimum packet latency (nanoseconds)
+    double m_maxLatency;             ///< Maximum packet latency (nanoseconds)
+    double m_totalLatency;           ///< Accumulated latency for average calculation
 };
 
 /**

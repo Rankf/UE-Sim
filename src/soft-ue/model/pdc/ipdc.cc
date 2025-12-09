@@ -25,17 +25,17 @@ Ipdc::GetTypeId (void)
     // TODO: Simplify attributes to avoid complex struct accessors
     // For now, we'll skip these attributes to focus on basic compilation
     .AddAttribute ("EnableFlowControl",
-                   "Enable flow control",
-                   BooleanValue (true),
-                   MakeBooleanAccessor (&Ipdc::IsFlowControlEnabled,
-                                       &Ipdc::SetFlowControlEnabled),
-                   MakeBooleanChecker ())
+                    "Enable flow control",
+                    BooleanValue (true),
+                    MakeBooleanAccessor (&Ipdc::IsFlowControlEnabled,
+                                        &Ipdc::SetFlowControlEnabled),
+                    MakeBooleanChecker ())
     .AddAttribute ("PacketLifetime",
-                   "Lifetime of queued packets",
-                   TimeValue (Seconds (10)),
-                   MakeTimeAccessor (&Ipdc::GetPacketLifetime,
-                                     &Ipdc::SetPacketLifetime),
-                   MakeTimeChecker ())
+                    "Lifetime of queued packets",
+                    TimeValue (Seconds (10)),
+                    MakeTimeAccessor (&Ipdc::GetPacketLifetime,
+                                      &Ipdc::SetPacketLifetime),
+                    MakeTimeChecker ())
     // TODO: Add proper trace sources later after basic compilation works
     ;
   return tid;
@@ -74,9 +74,9 @@ Ipdc::DoDispose (void)
 
   // Cancel queue cleanup
   if (m_queueCleanupEventId.IsPending ())
-    {
-      Simulator::Cancel (m_queueCleanupEventId);
-    }
+  {
+    Simulator::Cancel (m_queueCleanupEventId);
+  }
 
   // Clear queues
   ClearSendQueue ();
@@ -92,9 +92,9 @@ Ipdc::Initialize (const PdcConfig& config)
 
   // Initialize base class
   if (!PdcBase::Initialize (config))
-    {
-      return false;
-    }
+  {
+    return false;
+  }
 
   // Convert to IPDC config
   try

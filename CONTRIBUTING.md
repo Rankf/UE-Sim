@@ -1,8 +1,8 @@
-# Contributing to Soft-UE
+# Contributing to Soft-UE ns-3
 
-🎉 **Thank you for your interest in contributing to Soft-UE!** 🎉
+🎉 **感谢您对Soft-UE ns-3项目的关注！** 🎉
 
-We welcome contributions from the network simulation, research, and high-performance computing communities. This document provides comprehensive guidelines for contributing to the **world's first Ultra Ethernet protocol stack implementation** - a groundbreaking project achieving **6.25x performance improvement** over traditional networking solutions.
+我们欢迎网络仿真、学术研究和工业应用社区的各种贡献。本文档为**全球首个Ultra Ethernet协议栈开源实现**项目提供全面的贡献指南。这是一个经过T001多节点性能测试（100%成功率）和T002集成测试验证的生产级项目。
 
 ## 📋 Table of Contents
 
@@ -22,17 +22,21 @@ We welcome contributions from the network simulation, research, and high-perform
 
 ```bash
 # 1. Fork and clone the repository
-git clone https://github.com/your-username/soft-ue-ns3.git
+git clone https://github.com/your-org/soft-ue-ns3.git
 cd soft-ue-ns3
 
 # 2. Create a feature branch
 git checkout -b feature/amazing-feature
 
 # 3. Make your changes and test
-./ns3 build soft-ue
+./ns3 build
 ./ns3 test soft-ue
 
-# 4. Submit a pull request
+# 4. Verify T001/T002 baseline tests
+./ns3 run "simple-multi-node --nNodes=3"
+./ns3 run "t002-simple-integration-test --nNodes=3"
+
+# 5. Submit a pull request
 git push origin feature/amazing-feature
 ```
 
@@ -88,8 +92,14 @@ brew install cmake ninja gtk+3 xml2 python3 gsl
 
 5. **Verify installation**
 ```bash
-./ns3 run "test-runner --test-name=soft-ue-ses"
-./ns3 run "test-runner --test-name=soft-ue-pds"
+# 基础验证
+./ns3 run validate-soft-ue-demo
+
+# T001多节点性能测试（应显示100%成功率）
+./ns3 run "simple-multi-node --nNodes=3 --verbose=true"
+
+# T002集成测试（验证协议栈功能）
+./ns3 run "t002-simple-integration-test --nNodes=3 --packetCount=10"
 ```
 
 ## 📝 Code Standards

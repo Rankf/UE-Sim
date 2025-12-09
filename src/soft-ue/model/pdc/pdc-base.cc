@@ -67,9 +67,21 @@ PdcBase::GetTypeId (void)
 
 PdcBase::PdcBase ()
   : m_active (false),
-    m_processInterval (MilliSeconds (1))
+    m_processInterval (MilliSeconds (1)),
+    m_maxTimestampAge (Seconds (60)),      // 1 minute maximum age
+    m_maxTimestampEntries (10000)          // Maximum 10k timestamp entries
 {
   NS_LOG_FUNCTION (this);
+
+  // Initialize ns3 DropTailQueue objects for packet management
+  m_sendQueue = CreateObject<DropTailQueue<Packet>> ();
+  m_receiveQueue = CreateObject<DropTailQueue<Packet>> ();
+
+  // Configure queues for data center performance
+  m_sendQueue->SetMaxSize (QueueSize (QueueSizeUnit::PACKETS, 1024));
+  m_receiveQueue->SetMaxSize (QueueSize (QueueSizeUnit::PACKETS, 1024));
+
+  NS_LOG_DEBUG ("PDC base created with ns3::Queue packets management and memory protection");
 }
 
 PdcBase::~PdcBase ()
@@ -88,14 +100,16 @@ PdcBase::DoDispose (void)
       Simulator::Cancel (m_processEventId);
     }
 
-  // Clear queues
-  while (!m_sendQueue.empty ())
+  // Clear ns3::Queue objects
+  if (m_sendQueue)
     {
-      m_sendQueue.pop ();
+      m_sendQueue->Dispose ();
+      m_sendQueue = nullptr;
     }
-  while (!m_receiveQueue.empty ())
+  if (m_receiveQueue)
     {
-      m_receiveQueue.pop ();
+      m_receiveQueue->Dispose ();
+      m_receiveQueue = nullptr;
     }
 
   // Clear component references
@@ -229,11 +243,17 @@ PdcBase::HandleReceivedPacket (Ptr<Packet> packet, uint32_t sourceFep)
   // Record packet entry timestamp for latency measurement
   RecordPacketEntry (packet);
 
-  // Add to receive queue for processing
-  m_receiveQueue.push (packet);
-
-  LogDetailed ("HandleReceivedPacket", "Packet queued for processing, queue size: " +
-               std::to_string (m_receiveQueue.size ()));
+  // Add to receive queue for processing using ns3::Queue
+  if (m_receiveQueue->Enqueue (packet))
+  {
+    LogDetailed ("HandleReceivedPacket", "Packet queued for processing, queue size: " +
+                 std::to_string (m_receiveQueue->GetNPackets ()));
+  }
+  else
+  {
+    NS_LOG_WARN ("Receive queue full, dropping packet");
+    return false;
+  }
 
   return true;
 }
@@ -438,8 +458,8 @@ PdcBase::HandleError (PdsErrorCode error, const std::string& details)
   // Attempt error recovery for non-critical errors
   if (error == PdsErrorCode::PDC_FULL)
     {
-      // Trigger queue cleanup
-      if (m_receiveQueue.size () > m_config.maxPacketSize)
+      // Trigger queue cleanup using ns3::Queue interface
+      if (m_receiveQueue && m_receiveQueue->GetNPackets () > m_config.maxPacketSize)
         {
           NS_LOG_INFO ("Triggering emergency queue cleanup due to buffer overflow");
           // Could implement aggressive packet dropping here
@@ -471,6 +491,9 @@ PdcBase::DoPeriodicProcessing (void)
   ProcessSendQueue ();
   ProcessReceiveQueue ();
 
+  // Periodic cleanup of expired timestamps to prevent memory leaks
+  CleanupExpiredTimestamps ();
+
   // Schedule next processing cycle
   ScheduleProcessing ();
 }
@@ -479,32 +502,34 @@ void
 PdcBase::ProcessSendQueue (void)
 {
   // This will be implemented by subclasses
-  // Base class just clears the queue
-  while (!m_sendQueue.empty ())
+  // Base class just clears the queue using ns3::Queue interface
+  if (m_sendQueue)
     {
-      Ptr<Packet> packet = m_sendQueue.front ();
-      m_sendQueue.pop ();
-
-      LogDetailed ("ProcessSendQueue", "Discarding unimplemented packet send");
+      Ptr<Packet> packet;
+      while ((packet = m_sendQueue->Dequeue ()) != nullptr)
+        {
+          LogDetailed ("ProcessSendQueue", "Discarding unimplemented packet send");
+        }
     }
 }
 
 void
 PdcBase::ProcessReceiveQueue (void)
 {
-  while (!m_receiveQueue.empty ())
+  if (m_receiveQueue)
     {
-      Ptr<Packet> packet = m_receiveQueue.front ();
-      m_receiveQueue.pop ();
+      Ptr<Packet> packet;
+      while ((packet = m_receiveQueue->Dequeue ()) != nullptr)
+        {
+          UpdateStatistics (false, packet);
+          m_packetRxTrace (packet, m_config.pdcId);
 
-      UpdateStatistics (false, packet);
-      m_packetRxTrace (packet, m_config.pdcId);
+          // Measure and trace packet processing latency
+          MeasureAndTraceLatency (packet);
 
-      // Measure and trace packet processing latency
-      MeasureAndTraceLatency (packet);
-
-      LogDetailed ("ProcessReceiveQueue", "Processed received packet, size: " +
-                   std::to_string (packet->GetSize ()));
+          LogDetailed ("ProcessReceiveQueue", "Processed received packet, size: " +
+                       std::to_string (packet->GetSize ()));
+        }
     }
 }
 
@@ -526,10 +551,19 @@ PdcBase::RecordPacketEntry (Ptr<Packet> packet)
   uint64_t packetId = GetPacketId (packet);
   Time entryTime = Simulator::Now ();
 
+  // Check if we need to clean up before adding new entry
+  if (m_packetTimestamps.size () >= m_maxTimestampEntries)
+  {
+    NS_LOG_INFO ("Timestamp map approaching size limit (" << m_maxTimestampEntries
+                 << "), triggering cleanup");
+    CleanupExpiredTimestamps ();
+  }
+
   // Store entry timestamp
   m_packetTimestamps[packetId] = entryTime;
 
-  NS_LOG_DEBUG ("Recorded entry time for packet " << packetId << " at " << entryTime.GetMicroSeconds () << "μs");
+  NS_LOG_DEBUG ("Recorded entry time for packet " << packetId << " at " << entryTime.GetMicroSeconds () << "μs"
+               << " (total entries: " << m_packetTimestamps.size () << ")");
 }
 
 void
@@ -577,6 +611,68 @@ PdcBase::MeasureAndTraceLatency (Ptr<Packet> packet)
     {
       NS_LOG_WARN ("No entry timestamp found for packet " << packetId);
     }
+}
+
+void
+PdcBase::CleanupExpiredTimestamps (void)
+{
+  NS_LOG_FUNCTION (this);
+
+  if (m_packetTimestamps.empty ())
+  {
+    return;
+  }
+
+  Time currentTime = Simulator::Now ();
+  uint32_t removedCount = 0;
+  auto it = m_packetTimestamps.begin ();
+
+  // Remove expired entries
+  while (it != m_packetTimestamps.end ())
+  {
+    if (currentTime - it->second > m_maxTimestampAge)
+    {
+      NS_LOG_DEBUG ("Removing expired timestamp for packet " << it->first
+                   << " (age: " << (currentTime - it->second).GetSeconds () << "s)");
+      it = m_packetTimestamps.erase (it);
+      removedCount++;
+    }
+    else
+    {
+      ++it;
+    }
+  }
+
+  // If still too many entries after age-based cleanup, remove oldest ones
+  if (m_packetTimestamps.size () > m_maxTimestampEntries)
+  {
+    uint32_t excessCount = m_packetTimestamps.size () - m_maxTimestampEntries;
+    NS_LOG_WARN ("Timestamp map still exceeds limit after age cleanup, "
+                 << "removing " << excessCount << " oldest entries");
+
+    // Convert to vector and sort by timestamp to remove oldest
+    std::vector<std::pair<uint64_t, Time>> entries;
+    for (const auto& pair : m_packetTimestamps)
+    {
+      entries.push_back (pair);
+    }
+
+    std::sort (entries.begin (), entries.end (),
+               [](const auto& a, const auto& b) { return a.second < b.second; });
+
+    // Remove oldest entries
+    for (uint32_t i = 0; i < excessCount; ++i)
+    {
+      m_packetTimestamps.erase (entries[i].first);
+      removedCount++;
+    }
+  }
+
+  if (removedCount > 0)
+  {
+    NS_LOG_INFO ("Cleaned up " << removedCount << " expired timestamp entries"
+                 << " (remaining: " << m_packetTimestamps.size () << ")");
+  }
 }
 
 std::string

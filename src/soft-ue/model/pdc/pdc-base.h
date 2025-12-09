@@ -37,6 +37,7 @@
 #include "ns3/event-id.h"
 #include "ns3/traced-callback.h"
 #include "ns3/packet.h"
+#include "ns3/drop-tail-queue.h"
 #include <unordered_map>
 #include "../common/transport-layer.h"
 #include "../ses/operation-metadata.h"
@@ -414,14 +415,16 @@ private:
     Ptr<SoftUeNetDevice> m_netDevice;         ///< Associated network device
     Ptr<SesManager> m_sesManager;              ///< Associated SES manager
 
-    // Internal state
-    std::queue<Ptr<Packet>> m_sendQueue;       ///< Outgoing packet queue
-    std::queue<Ptr<Packet>> m_receiveQueue;    ///< Incoming packet queue
+    // Internal state (ns-3 standardized queues)
+    Ptr<DropTailQueue<Packet>> m_sendQueue;       ///< Outgoing packet queue (DropTailQueue)
+    Ptr<DropTailQueue<Packet>> m_receiveQueue;    ///< Incoming packet queue (DropTailQueue)
     EventId m_processEventId;                  ///< Processing event ID
     Time m_processInterval;                    ///< Processing interval
 
     // Latency tracking
     std::unordered_map<uint64_t, Time> m_packetTimestamps; ///< Packet entry timestamps for latency measurement
+    Time m_maxTimestampAge;                               ///< Maximum age for timestamp entries before cleanup
+    uint32_t m_maxTimestampEntries;                       ///< Maximum number of timestamp entries before forced cleanup
 
     // Internal helper methods
     void ScheduleProcessing (void);
@@ -433,6 +436,9 @@ private:
     uint64_t GetPacketId (Ptr<Packet> packet);
     void RecordPacketEntry (Ptr<Packet> packet);
     void MeasureAndTraceLatency (Ptr<Packet> packet);
+
+    // Memory management helpers
+    void CleanupExpiredTimestamps (void);
 
     // Error handling helpers
     std::string GetErrorTypeString (PdsErrorCode error);

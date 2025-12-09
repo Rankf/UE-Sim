@@ -117,9 +117,18 @@ SoftUeChannel::Attach (Ptr<NetDevice> device)
         }
     }
 
-  // Add device to channel
+  // Add device to channel with limit check
+  static const std::size_t MAX_DEVICES_PER_CHANNEL = 1000; // Reasonable limit
+  if (m_devices.size () >= MAX_DEVICES_PER_CHANNEL)
+  {
+    NS_LOG_ERROR ("Cannot attach device: maximum device count per channel reached ("
+                  << MAX_DEVICES_PER_CHANNEL << ")");
+    return;
+  }
+
   m_devices.push_back (device);
-  NS_LOG_INFO ("Attached device " << device << " to Soft-Ue channel");
+  NS_LOG_INFO ("Attached device " << device << " to Soft-Ue channel (total devices: "
+               << m_devices.size () << ")");
 }
 
 bool

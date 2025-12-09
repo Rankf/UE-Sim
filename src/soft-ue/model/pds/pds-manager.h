@@ -10,6 +10,8 @@
 #include "ns3/traced-callback.h"
 #include "pds-common.h"
 #include "../ses/ses-manager.h"
+#include "../pdc/pdc-base.h"
+#include "../pdc/ipdc.h"
 
 namespace ns3 {
 
@@ -26,6 +28,15 @@ class SoftUeNetDevice;
 class PdsManager : public Object
 {
 public:
+    /**
+     * @brief PDS Manager state enumeration
+     */
+    enum PdsState
+    {
+        PDS_IDLE,        ///< PDS manager is idle and ready to process requests
+        PDS_BUSY,        ///< PDS manager is busy processing requests
+        PDS_ERROR        ///< PDS manager is in error state
+    };
     /**
      * @brief Get the type ID for this class
      * @return TypeId
@@ -179,6 +190,29 @@ public:
      */
     bool IsStatisticsEnabled (void) const;
 
+    /**
+     * @brief Get current PDS state
+     * @return Current PDS state
+     */
+    PdsState GetState (void) const;
+
+    /**
+     * @brief Check if PDS manager is busy
+     * @return true if PDS manager is busy
+     */
+    bool IsBusy (void) const;
+
+    /**
+     * @brief Check if PDS manager is in error state
+     * @return true if PDS manager is in error state
+     */
+    bool IsError (void) const;
+
+    /**
+     * @brief Reset PDS manager to idle state
+     */
+    void Reset (void);
+
 private:
     /**
      * @brief Get PDC by identifier
@@ -194,11 +228,31 @@ private:
      */
     bool DispatchPacket (const SesPdsRequest& request);
 
+    /**
+     * @brief Validate SES PDS request
+     * @param request SES PDS request to validate
+     * @return true if request is valid
+     */
+    bool ValidateSesPdsRequest (const SesPdsRequest& request) const;
+
     // Member variables
     Ptr<SesManager> m_sesManager;                        ///< Associated SES manager
     Ptr<SoftUeNetDevice> m_netDevice;                    ///< Network device
     Ptr<PdsStatistics> m_statistics;                     ///< Statistics collection
     bool m_statisticsEnabled;                            ///< Statistics collection enabled flag
+
+    // PDC Management
+    std::map<uint16_t, Ptr<PdcBase>> m_pdcs;             ///< Active PDCs indexed by PDC ID
+    uint16_t m_nextPdcId;                                ///< Next available PDC ID
+    uint32_t m_maxPdcCount;                              ///< Maximum PDC count
+
+    // Performance optimization: track free PDC IDs using a bitmap and queue
+    static const uint16_t MAX_PDC_ID = 65535;             ///< Maximum PDC ID value
+    std::vector<bool> m_pdcIdBitmap;                      ///< Bitmap for quick free ID lookup
+    std::queue<uint16_t> m_freePdcIds;                    ///< Queue of recently freed PDC IDs
+
+    // State management
+    PdsState m_state;                                    ///< Current PDS manager state
 };
 
 } // namespace ns3

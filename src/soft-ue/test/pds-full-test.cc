@@ -42,39 +42,39 @@ main (int argc, char *argv[])
 {
     LogComponentEnable("PdsFullTest", LOG_LEVEL_INFO);
 
-    NS_LOG_INFO("=== PDS 完整功能测试 ===");
+    NS_LOG_INFO("=== PDS Full Functionality Test ===");
 
-    // 创建测试拓扑
+    // Create test topology
     NodeContainer nodes;
     nodes.Create(2);
 
-    // 创建Soft-UE Helper
+    // Create Soft-UE Helper
     SoftUeHelper helper;
     helper.SetDeviceAttribute("MaxPdcCount", UintegerValue(1024));
 
-    // 安装网络设备
+    // Install network devices
     NetDeviceContainer devices = helper.Install(nodes);
-    NS_LOG_INFO("✓ 网络设备安装成功，设备数量: " << devices.GetN());
+    NS_LOG_INFO("✓ Network devices installed successfully, device count: " << devices.GetN());
 
-    // 获取网络设备
+    // Get network device
     Ptr<SoftUeNetDevice> device = DynamicCast<SoftUeNetDevice>(devices.Get(0));
     NS_ASSERT_MSG(device != nullptr, "Failed to get SoftUeNetDevice");
 
-    // 获取PDS管理器
+    // Get PDS manager
     Ptr<PdsManager> pdsManager = device->GetPdsManager();
     NS_ASSERT_MSG(pdsManager != nullptr, "Failed to get PDS Manager from device");
-    NS_LOG_INFO("✓ PDS Manager获取成功");
+    NS_LOG_INFO("✓ PDS Manager retrieved successfully");
 
-    // 测试基本功能
+    // Test basic functionality
     pdsManager->Initialize();
-    NS_LOG_INFO("✓ PDS Manager初始化成功");
+    NS_LOG_INFO("✓ PDS Manager initialized successfully");
 
-    // 获取初始统计
+    // Get initial statistics
     auto initialStats = pdsManager->GetStatistics();
-    NS_LOG_INFO("初始统计: " << initialStats->GetStatistics());
+    NS_LOG_INFO("Initial statistics: " << initialStats->GetStatistics());
 
-    // 测试连接建立
-    NS_LOG_INFO("开始连接建立测试...");
+    // Test connection establishment
+    NS_LOG_INFO("Starting connection establishment test...");
     SesPdsRequest connRequest;
     connRequest.src_fep = 0x12345678;
     connRequest.dst_fep = 0x87654321;
@@ -93,10 +93,10 @@ main (int argc, char *argv[])
     connRequest.packet = Create<Packet>(connRequest.pkt_len);
 
     bool connProcessed = pdsManager->ProcessSesRequest(connRequest);
-    NS_LOG_INFO("✓ 连接建立请求处理: " << (connProcessed ? "成功" : "失败"));
+    NS_LOG_INFO("✓ Connection establishment request processing: " << (connProcessed ? "Success" : "Failed"));
 
-    // 测试数据传输
-    NS_LOG_INFO("开始数据传输测试...");
+    // Test data transmission
+    NS_LOG_INFO("Starting data transmission test...");
     uint32_t dataRequestCount = 3;
     uint32_t processedCount = 0;
 
@@ -126,10 +126,10 @@ main (int argc, char *argv[])
         }
     }
 
-    NS_LOG_INFO("✓ 数据请求处理: " << processedCount << "/" << dataRequestCount << " 成功");
+    NS_LOG_INFO("✓ Data request processing: " << processedCount << "/" << dataRequestCount << " successful");
 
-    // 性能测试
-    NS_LOG_INFO("开始性能测试...");
+    // Performance test
+    NS_LOG_INFO("Starting performance test...");
     Time startTime = Simulator::Now();
     const uint32_t performanceTestCount = 50;
 
@@ -156,23 +156,23 @@ main (int argc, char *argv[])
     }
 
     Time endTime = Simulator::Now();
-    NS_LOG_INFO("✓ 性能测试: 处理 " << performanceTestCount << " 个请求耗时 "
-                << (endTime - startTime).GetMicroSeconds() << " 微秒");
+    NS_LOG_INFO("✓ Performance test: Processing " << performanceTestCount << " requests took "
+                << (endTime - startTime).GetMicroSeconds() << " microseconds");
 
-    // 获取最终统计
+    // Get final statistics
     auto finalStats = pdsManager->GetStatistics();
-    NS_LOG_INFO("最终统计: " << finalStats->GetStatistics());
+    NS_LOG_INFO("Final statistics: " << finalStats->GetStatistics());
 
-    NS_LOG_INFO("=== PDS 完整功能测试结果 ===");
-    NS_LOG_INFO("✓ 网络拓扑: " << nodes.GetN() << " 节点");
-    NS_LOG_INFO("✓ Soft-UE设备: " << devices.GetN() << " 个");
-    NS_LOG_INFO("✓ 连接建立: " << (connProcessed ? "成功" : "失败"));
-    NS_LOG_INFO("✓ 数据传输: " << processedCount << "/" << dataRequestCount << " 成功");
-    NS_LOG_INFO("✓ 性能测试: " << performanceTestCount << " 个请求, "
-                << (endTime - startTime).GetMicroSeconds() << " 微秒");
-    NS_LOG_INFO("=== 测试完成 ===");
-    NS_LOG_INFO("状态: ✓ 端到端通信成功");
-    NS_LOG_INFO("结论: ✓ Soft-UE模块支持完整的PDS功能");
+    NS_LOG_INFO("=== PDS Full Functionality Test Results ===");
+    NS_LOG_INFO("✓ Network topology: " << nodes.GetN() << " nodes");
+    NS_LOG_INFO("✓ Soft-UE devices: " << devices.GetN() << " devices");
+    NS_LOG_INFO("✓ Connection establishment: " << (connProcessed ? "Success" : "Failed"));
+    NS_LOG_INFO("✓ Data transmission: " << processedCount << "/" << dataRequestCount << " successful");
+    NS_LOG_INFO("✓ Performance test: " << performanceTestCount << " requests, "
+                << (endTime - startTime).GetMicroSeconds() << " microseconds");
+    NS_LOG_INFO("=== Test Completed ===");
+    NS_LOG_INFO("Status: ✓ End-to-end communication successful");
+    NS_LOG_INFO("Conclusion: ✓ Soft-UE module supports complete PDS functionality");
 
     return 0;
 }

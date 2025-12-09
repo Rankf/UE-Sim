@@ -40,45 +40,45 @@ main (int argc, char *argv[])
 {
     LogComponentEnable("SesManagerTest", LOG_LEVEL_INFO);
 
-    NS_LOG_INFO("=== SES Manager 核心模块测试 ===");
+    NS_LOG_INFO("=== SES Manager Core Module Test ===");
 
-    // 创建SES管理器
+    // Create SES manager
     Ptr<SesManager> sesManager = CreateObject<SesManager> ();
 
-    // 测试SES管理器创建
+    // Test SES manager creation
     if (sesManager == nullptr)
     {
         NS_LOG_ERROR("Failed to create SES Manager");
         return 1;
     }
-    NS_LOG_INFO("✓ Soft-UE设备创建成功");
+    NS_LOG_INFO("✓ Soft-UE device created successfully");
 
-    // 测试初始化
+    // Test initialization
     sesManager->Initialize ();
-    NS_LOG_INFO("✓ SES管理器初始化成功");
+    NS_LOG_INFO("✓ SES manager initialized successfully");
 
-    // 测试PDC数量
+    // Test PDC count
     uint32_t maxPdcCount = 512;
-    NS_LOG_INFO("✓ 最大PDC数量: " << maxPdcCount);
+    NS_LOG_INFO("✓ Maximum PDC count: " << maxPdcCount);
 
-    // 测试MAC地址
+    // Test MAC address
     Mac48Address mac = Mac48Address::Allocate ();
-    NS_LOG_INFO("✓ MAC地址: " << mac);
+    NS_LOG_INFO("✓ MAC address: " << mac);
 
-    // 测试设备类型
+    // Test device type
     TypeId typeId = sesManager->GetInstanceTypeId ();
-    NS_LOG_INFO("✓ 设备类型: " << typeId);
+    NS_LOG_INFO("✓ Device type: " << typeId);
 
-    // 测试基本操作
+    // Test basic operations
     if (sesManager == nullptr)
     {
         NS_LOG_ERROR("SES Manager should not be null");
         return 1;
     }
 
-    NS_LOG_INFO("=== SES Manager 测试完成 ===");
-    NS_LOG_INFO("状态: ✓ 所有基本功能正常");
-    NS_LOG_INFO("验证: ✓ SES管理器核心功能可用");
+    NS_LOG_INFO("=== SES Manager Test Completed ===");
+    NS_LOG_INFO("Status: ✓ All basic functions working correctly");
+    NS_LOG_INFO("Verification: ✓ SES manager core functions available");
 
     return 0;
 }

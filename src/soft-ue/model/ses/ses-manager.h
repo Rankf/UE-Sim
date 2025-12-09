@@ -57,6 +57,15 @@ class SesManager : public Object
 {
 public:
     /**
+     * @brief SES Manager state enumeration
+     */
+    enum SesState
+    {
+        SES_IDLE,        ///< SES manager is idle and ready to process requests
+        SES_BUSY,        ///< SES manager is busy processing requests
+        SES_ERROR        ///< SES manager is in error state
+    };
+    /**
      * @brief Get the type ID for this class
      * @return TypeId
      */
@@ -190,6 +199,29 @@ public:
     void SetDetailedLogging (bool enable);
 
     /**
+     * @brief Get current SES state
+     * @return Current SES state
+     */
+    SesState GetState (void) const;
+
+    /**
+     * @brief Check if SES manager is busy
+     * @return true if SES manager is busy
+     */
+    bool IsBusy (void) const;
+
+    /**
+     * @brief Check if SES manager is in error state
+     * @return true if SES manager is in error state
+     */
+    bool IsError (void) const;
+
+    /**
+     * @brief Reset SES manager to idle state
+     */
+    void Reset (void);
+
+    /**
      * @brief Get statistics
      * @return Statistics string
      */
@@ -227,12 +259,15 @@ private:
     uint32_t m_maxMtu;                          ///< Maximum transmission unit
     bool m_detailedLogging;                      ///< Detailed logging flag
 
+    // State management
+    SesState m_state;                            ///< Current SES manager state
+
     // Callbacks
     Callback<bool, uint64_t> m_jobIdValidator;           ///< Job ID validator
     Callback<bool, uint32_t, uint64_t> m_permissionChecker; ///< Permission checker
     Callback<bool, uint64_t> m_memoryRegionValidator;     ///< Memory region validator
     Callback<void, Ptr<ExtendedOperationMetadata>> m_packetReceivedCallback; ///< Packet received callback
-    Callback<void, Ptr<ExtendedOperationMetadata>> m_packetSentCallback;     ///< Packet sent callback
+    Callback<void, Ptr<ExtendedOperationMetadata>> m_packetSentCallback;      ///< Packet sent callback
 
     // Timers and scheduling
     EventId m_processEventId;                   ///< Event ID for periodic processing
@@ -341,6 +376,41 @@ private:
      * @return true if metadata is valid
      */
     bool ValidateOperationMetadata (Ptr<ExtendedOperationMetadata> metadata) const;
+
+    /**
+     * @brief Validate PDC SES request
+     * @param request PDC SES request to validate
+     * @return true if request is valid
+     */
+    bool ValidatePdcSesRequest (const PdcSesRequest& request) const;
+
+    /**
+     * @brief Validate PDC SES response
+     * @param response PDC SES response to validate
+     * @return true if response is valid
+     */
+    bool ValidatePdcSesResponse (const PdcSesResponse& response) const;
+
+    /**
+     * @brief Validate SES PDS response
+     * @param response SES PDS response to validate
+     * @return true if response is valid
+     */
+    bool ValidateSesPdsResponse (const SesPdsResponse& response) const;
+
+    /**
+     * @brief Process data operation response
+     * @param response Data operation response
+     * @return true if processing successful
+     */
+    bool ProcessDataOperationResponse (const PdcSesResponse& response);
+
+    /**
+     * @brief Process atomic operation response
+     * @param response Atomic operation response
+     * @return true if processing successful
+     */
+    bool ProcessAtomicOperationResponse (const PdcSesResponse& response);
 };
 
 } // namespace ns3

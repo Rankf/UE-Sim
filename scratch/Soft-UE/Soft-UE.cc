@@ -43,8 +43,6 @@
 #include <algorithm>
 #include <vector>
 
-// Include the Soft-UE logger for better log formatting
-#include "ns3/soft-ue-logger.h"
 
 using namespace ns3;
 
@@ -579,23 +577,13 @@ PacketTrace (std::string context, Ptr<const Packet> packet, Ptr<NetDevice> devic
 int
 main (int argc, char *argv[])
 {
-    // Initialize Soft-UE structured logger
-    SoftUeLogger& logger = SoftUeLogger::GetInstance ();
-    logger.SetLogFile ("log/soft-ue-test.log");
-    logger.EnableFileLogging (true);
 
-    // Configure optimized logging - reduced verbosity for better readability
+    // Configure optimized logging with structured output
     LogComponentEnable ("SoftUeFullTest", LOG_LEVEL_INFO);
-    LogComponentEnable ("SoftUeNetDevice", LOG_LEVEL_WARN);    // Changed to WARN (reduced output)
-    LogComponentEnable ("PdsManager", LOG_LEVEL_ERROR);       // Changed to ERROR (errors only)
-    LogComponentEnable ("SesManager", LOG_LEVEL_WARN);        // Changed to WARN (reduced output)
-    LogComponentEnable ("SoftUeChannel", LOG_LEVEL_ERROR);    // Changed to ERROR (errors only)
-
-    // Log test start with structured logger
-    logger.LogInfo ("SoftUeTest", "==================================================");
-    logger.LogInfo ("SoftUeTest", "=== Soft-UE Complete End-to-End Test ===");
-    logger.LogInfo ("SoftUeTest", "==================================================");
-    logger.LogInfo ("SoftUeTest", "Testing full integration of src/soft-ue/model modules");
+    LogComponentEnable ("SoftUeNetDevice", LOG_LEVEL_WARN);
+    LogComponentEnable ("PdsManager", LOG_LEVEL_INFO);         // Enable INFO for PDC creation tracking
+    LogComponentEnable ("SesManager", LOG_LEVEL_WARN);
+    LogComponentEnable ("SoftUeChannel", LOG_LEVEL_ERROR);
 
     NS_LOG_INFO ("=== Soft-UE Complete End-to-End Test ===");
     NS_LOG_INFO ("Testing full integration of src/soft-ue/model modules");
@@ -723,21 +711,20 @@ main (int argc, char *argv[])
     // Enable statistics collection (if available)
     // helper.EnableStatisticsCollectionAll ();
 
-    logger.LogInfo ("SoftUeTest", "==================================================");
-    logger.LogInfo ("SoftUeTest", "=== STARTING SIMULATION ===");
-    logger.LogInfo ("SoftUeTest", "==================================================");
-    NS_LOG_INFO ("Starting simulation...");
     double simulationEndTime = requiredServerTime + 2.0; // Extra buffer
+
+    NS_LOG_INFO ("Starting simulation...");
+    NS_LOG_INFO ("Simulation parameters:");
+    NS_LOG_INFO ("  - Packet size: " << packetSize << " bytes");
+    NS_LOG_INFO ("  - Packet count: " << numPackets);
+    NS_LOG_INFO ("  - Simulation duration: " << simulationEndTime << " seconds");
+    NS_LOG_INFO ("  - Data center latency target: 500ns per packet");
     Simulator::Stop (Seconds (simulationEndTime));
     Simulator::Run ();
 
-    // Final statistics
-    logger.LogInfo ("SoftUeTest", "==================================================");
-    logger.LogInfo ("SoftUeTest", "=== FINAL STATISTICS ===");
-    logger.LogInfo ("SoftUeTest", "==================================================");
-    NS_LOG_INFO ("\n" << std::string (50, '='));
-    NS_LOG_INFO ("=== FINAL STATISTICS ===");
-    NS_LOG_INFO (std::string (50, '='));
+    NS_LOG_INFO ("\n" << std::string (60, '='));
+    NS_LOG_INFO ("SOFT-UE END-TO-END COMMUNICATION TEST RESULTS");
+    NS_LOG_INFO (std::string (60, '='));
 
     NS_LOG_INFO ("\n" << clientApp->GetStatistics ());
     NS_LOG_INFO ("\n" << serverApp->GetStatistics ());
@@ -757,30 +744,30 @@ main (int argc, char *argv[])
                      (clientApp->GetSesProcessedCount () > 0) &&
                      (clientApp->GetPdsProcessedCount () > 0);
 
-    NS_LOG_INFO ("\n" << std::string (50, '='));
-    NS_LOG_INFO ("=== TEST RESULT ===");
-    NS_LOG_INFO (std::string (50, '='));
-    NS_LOG_INFO ("Test " << (testPassed ? "PASSED" : "FAILED"));
-    NS_LOG_INFO ("Expected packets: " << numPackets);
-    NS_LOG_INFO ("Client processed: " << clientApp->GetPacketCount ());
-    NS_LOG_INFO ("Server received: " << serverApp->GetPacketCount ());
-    NS_LOG_INFO ("Client SES processed: " << clientApp->GetSesProcessedCount ());
-    NS_LOG_INFO ("Client PDS processed: " << clientApp->GetPdsProcessedCount ());
-    NS_LOG_INFO ("Server SES processed: " << serverApp->GetSesProcessedCount ());
-    NS_LOG_INFO ("Server PDS processed: " << serverApp->GetPdsProcessedCount ());
+    NS_LOG_INFO ("\n" << std::string (60, '='));
+    NS_LOG_INFO ("COMMUNICATION TEST VERIFICATION");
+    NS_LOG_INFO (std::string (60, '='));
 
-    // Log test result with structured logger
-    std::string result = testPassed ? "PASSED" : "FAILED";
-    logger.LogInfo ("SoftUeTest", "==================================================");
-    logger.LogInfo ("SoftUeTest", "=== TEST RESULT ===");
-    logger.LogInfo ("SoftUeTest", "==================================================");
-    logger.LogInfo ("SoftUeTest", "Test " + result);
-    logger.LogInfo ("SoftUeTest", "Expected packets: " + std::to_string (numPackets));
-    logger.LogInfo ("SoftUeTest", "Client processed: " + std::to_string (clientApp->GetPacketCount ()));
-    logger.LogInfo ("SoftUeTest", "Server received: " + std::to_string (serverApp->GetPacketCount ()));
+    // Test status with clear formatting
+    std::string status = testPassed ? "✅ PASSED" : "❌ FAILED";
+    NS_LOG_INFO ("Overall Status: " << status);
 
-    logger.Flush (); // Ensure all logs are written
-    Simulator::Destroy ();
+    // Packet transmission verification
+    NS_LOG_INFO ("Packet Transmission:");
+    NS_LOG_INFO ("  Expected packets:    " << numPackets);
+    NS_LOG_INFO ("  Client processed:    " << clientApp->GetPacketCount () << " ("
+                << (numPackets > 0 ? (100.0 * clientApp->GetPacketCount () / numPackets) : 0) << "%)");
+    NS_LOG_INFO ("  Server received:    " << serverApp->GetPacketCount () << " ("
+                << (numPackets > 0 ? (100.0 * serverApp->GetPacketCount () / numPackets) : 0) << "%)");
+
+    // Protocol layer processing
+    NS_LOG_INFO ("Protocol Layer Processing:");
+    NS_LOG_INFO ("  Client SES processed: " << clientApp->GetSesProcessedCount ());
+    NS_LOG_INFO ("  Client PDS processed: " << clientApp->GetPdsProcessedCount ());
+    NS_LOG_INFO ("  Server SES processed: " << serverApp->GetSesProcessedCount ());
+    NS_LOG_INFO ("  Server PDS processed: " << serverApp->GetPdsProcessedCount ());
+
+      Simulator::Destroy ();
 
     return testPassed ? 0 : 1;
 }

@@ -334,7 +334,8 @@ MsnTable::RemoveEntry (uint64_t jobId)
 }
 
 bool
-MsnTable::UpdateEntry (uint64_t jobId, uint64_t psn, uint32_t packetLength, bool isEom, bool isFirstPacket)
+MsnTable::UpdateEntry (uint64_t jobId, uint64_t psn, uint32_t packetLength,
+                       bool isEom, bool isFirstPacket)
 {
   NS_LOG_FUNCTION (this << jobId << psn << packetLength << isEom << isFirstPacket);
 
@@ -354,7 +355,8 @@ bool
 MsnTable::ValidatePsn (uint64_t jobId, uint64_t psn, uint64_t expectedLength,
                        uint32_t pdcId, bool isFirstPacket, bool isLastPacket)
 {
-  NS_LOG_FUNCTION (this << jobId << psn << expectedLength << pdcId << isFirstPacket << isLastPacket);
+  NS_LOG_FUNCTION (this << jobId << psn << expectedLength << pdcId
+                       << isFirstPacket << isLastPacket);
 
   Ptr<MsnEntry> entry = FindEntry (jobId);
 
