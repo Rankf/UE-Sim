@@ -12,9 +12,8 @@
 
 ## Deliverables (top-level) - COMPLETED
 - libns3.44-soft-ue.so (645KB) - compiled ns-3 module (Production Ready) - Soft-UE Team
-- scratch/Soft-UE/Soft-UE.cc - end-to-end test suite (100% pass rate) - Soft-UE Team
+- scratch/Soft-UE/Soft-UE.cc - end-to-end test suite (100% pass rate, fully parameterized) - Soft-UE Team
 - scratch/simple-multi-node.cc - multi-node topology validation (3/5/10 nodes verified) - Soft-UE Team
-- scratch/t002-simple-integration-test.cc - T002 integration test (FEP routing verified) - Soft-UE Team
 - docs/por/T001-soft-ue-optimization/task.yaml - optimization task tracking (COMPLETE with S1-S9) - Soft-UE Team
 - README.md - Comprehensive open source documentation - Soft-UE Team
 - CONTRIBUTING.md - Development contribution guidelines - Soft-UE Team

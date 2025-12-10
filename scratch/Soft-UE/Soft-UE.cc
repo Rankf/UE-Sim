@@ -49,6 +49,45 @@ using namespace ns3;
 NS_LOG_COMPONENT_DEFINE("SoftUeFullTest");
 
 /**
+ * @brief Configuration structure for Soft-UE test parameters
+ */
+struct SoftUeTestConfig
+{
+    // Network configuration
+    uint32_t nodeCount = 2;
+    std::string networkBase = "10.1.1.0";
+    std::string subnetMask = "255.255.255.0";
+    uint16_t serverPort = 8000;
+
+    // Protocol parameters
+    uint16_t baseClientPid = 1001;
+    uint16_t baseServerPid = 1001;
+    uint16_t serverEndpointId = 8000;
+    uint16_t clientEndpointId = 1001;
+    uint32_t baseClientJobId = 12345;
+    uint32_t baseServerJobId = 54321;
+    uint64_t baseMemoryAddress = 0x1000;
+    uint32_t addressIncrementStep = 1000;
+
+    // Performance parameters
+    uint32_t packetSize = 512;
+    uint32_t packetCount = 10;
+    Time sendInterval = NanoSeconds(500);
+    uint32_t maxPdcCount = 1024;
+
+    // Timing parameters
+    Time serverStartTime = Seconds(1.0);
+    Time clientStartTime = Seconds(2.0);
+    Time timeBuffer = MilliSeconds(1);
+    Time extraEndTime = Seconds(2.0);
+
+    // Protocol overhead
+    uint32_t headerOverhead = 42; // Approximate protocol header size
+    uint32_t fepSendAddress = 0x87654321;
+    uint32_t fepRecvAddress = 0x12345678;
+};
+
+/**
  * @brief Enhanced Soft-UE application that integrates all protocol layers
  */
 class SoftUeFullApp : public Application
@@ -67,6 +106,18 @@ public:
      */
     void Setup (uint32_t packetSize, uint32_t numPackets, Address destination,
                 uint16_t port, bool isServer = false);
+
+    /**
+     * @brief Set configuration for test parameters
+     * @param config Configuration structure
+     */
+    void SetConfiguration (const SoftUeTestConfig& config);
+
+    /**
+     * @brief Get current configuration
+     * @return Current configuration
+     */
+    const SoftUeTestConfig& GetConfiguration () const;
 
     /**
      * @brief Get comprehensive statistics from this application
@@ -152,6 +203,9 @@ private:
     uint64_t m_totalBytesReceived;              ///< Total bytes received
     uint32_t m_retransmissions;                 ///< Retransmission count
     uint32_t m_timeouts;                        ///< Timeout count
+
+    /// Configuration for test parameters
+    SoftUeTestConfig m_config;
 };
 
 SoftUeFullApp::SoftUeFullApp ()
@@ -266,7 +320,7 @@ SoftUeFullApp::ScheduleSend ()
 {
     if (m_packetsSent < m_numPackets)
     {
-        Time tNext (NanoSeconds (500)); // Send every 500ns - Data center level latency
+        Time tNext (m_config.sendInterval); // Use configured send interval
         m_sendEvent = Simulator::Schedule (tNext, &SoftUeFullApp::SendPacket, this);
     }
 }
@@ -316,11 +370,11 @@ SoftUeFullApp::SendPacket ()
     }
 
     extMetadata->op_type = OpType::SEND;
-    extMetadata->s_pid_on_fep = 1001 + m_packetsSent;
-    extMetadata->t_pid_on_fep = 2001 + m_packetsSent;
-    extMetadata->job_id = 12345;
+    extMetadata->s_pid_on_fep = m_config.baseClientPid + m_packetsSent;
+    extMetadata->t_pid_on_fep = (m_config.baseClientPid + 1000) + m_packetsSent;
+    extMetadata->job_id = m_config.baseClientJobId;
     extMetadata->messages_id = m_packetsSent + 1;
-    extMetadata->payload.start_addr = 0x1000 + m_packetsSent * 1000;
+    extMetadata->payload.start_addr = m_config.baseMemoryAddress + m_packetsSent * m_config.addressIncrementStep;
     extMetadata->payload.length = m_packetSize;
     extMetadata->payload.imm_data = 0xDEADBEEF + m_packetsSent;
     extMetadata->use_optimized_header = false;
@@ -331,8 +385,8 @@ SoftUeFullApp::SendPacket ()
     uint32_t srcNodeId = GetNode()->GetId () + 1;  // Ensure node ID > 0
     uint32_t dstNodeId = (srcNodeId == 1) ? 2 : 1;  // Ensure dest node is different and > 0
 
-    extMetadata->SetSourceEndpoint (srcNodeId, 1001);
-    extMetadata->SetDestinationEndpoint (dstNodeId, 8000);
+    extMetadata->SetSourceEndpoint (srcNodeId, m_config.clientEndpointId);
+    extMetadata->SetDestinationEndpoint (dstNodeId, m_config.serverEndpointId);
 
     // Debug: Check metadata validity before SES processing
     NS_LOG_INFO ("Metadata validity: " << (extMetadata->IsValid () ? "VALID" : "INVALID"));
@@ -436,11 +490,11 @@ SoftUeFullApp::ProcessSesPacket (Ptr<Packet> packet)
     // Create ExtendedOperationMetadata for response processing
     Ptr<ExtendedOperationMetadata> responseMetadata = Create<ExtendedOperationMetadata> ();
     responseMetadata->op_type = OpType::SEND;  // Using SEND for simplicity
-    responseMetadata->s_pid_on_fep = 3001;     // Response PID
-    responseMetadata->t_pid_on_fep = 4001;
-    responseMetadata->job_id = 54321;
-    responseMetadata->messages_id = 999;
-    responseMetadata->payload.start_addr = 0x2000;
+    responseMetadata->s_pid_on_fep = m_config.baseServerPid + 2000;     // Response PID
+    responseMetadata->t_pid_on_fep = m_config.baseServerPid + 3000;
+    responseMetadata->job_id = m_config.baseServerJobId;
+    responseMetadata->messages_id = 999;  // Reserved for responses
+    responseMetadata->payload.start_addr = m_config.baseMemoryAddress + 0x1000;
     responseMetadata->payload.length = packet->GetSize ();
     responseMetadata->payload.imm_data = 0xFEEDFACE;
     responseMetadata->use_optimized_header = false;
@@ -451,8 +505,8 @@ SoftUeFullApp::ProcessSesPacket (Ptr<Packet> packet)
     uint32_t srcNodeId = GetNode()->GetId () + 1;  // Ensure node ID > 0
     uint32_t dstNodeId = (srcNodeId == 1) ? 2 : 1;  // Ensure dest node is different and > 0
 
-    responseMetadata->SetSourceEndpoint (srcNodeId, 8000);
-    responseMetadata->SetDestinationEndpoint (dstNodeId, 1001);
+    responseMetadata->SetSourceEndpoint (srcNodeId, m_config.serverEndpointId);
+    responseMetadata->SetDestinationEndpoint (dstNodeId, m_config.clientEndpointId);
 
     return m_sesManager->ProcessSendRequest (responseMetadata);
 }
@@ -467,8 +521,8 @@ SoftUeFullApp::ProcessPdsPacket (Ptr<Packet> packet)
 
     // Create PDS request for processing
     SesPdsRequest pdsRequest;
-    pdsRequest.src_fep = 0x87654321;
-    pdsRequest.dst_fep = 0x12345678;
+    pdsRequest.src_fep = m_config.fepSendAddress;
+    pdsRequest.dst_fep = m_config.fepRecvAddress;
     pdsRequest.mode = 0;
     pdsRequest.rod_context = 1;
     pdsRequest.next_hdr = PDSNextHeader::UET_HDR_RESPONSE_DATA;
@@ -537,7 +591,7 @@ SoftUeFullApp::GetStatistics () const
     // Protocol efficiency
     if (m_totalBytesSent > 0)
     {
-        double efficiency = 100.0 * (m_totalBytesReceived - (m_packetsReceived * 42)) / m_totalBytesSent; // Approx header overhead
+        double efficiency = 100.0 * (m_totalBytesReceived - (m_packetsReceived * m_config.headerOverhead)) / m_totalBytesSent; // Configured header overhead
         oss << "  Protocol Efficiency: " << std::fixed << std::setprecision (1)
             << efficiency << "%\n";
     }
@@ -561,6 +615,20 @@ uint32_t
 SoftUeFullApp::GetPdsProcessedCount () const
 {
     return m_pdsProcessed;
+}
+
+void
+SoftUeFullApp::SetConfiguration (const SoftUeTestConfig& config)
+{
+    NS_LOG_FUNCTION (this);
+    m_config = config;
+}
+
+const SoftUeTestConfig&
+SoftUeFullApp::GetConfiguration () const
+{
+    NS_LOG_FUNCTION (this);
+    return m_config;
 }
 
 /**
@@ -588,30 +656,35 @@ main (int argc, char *argv[])
     NS_LOG_INFO ("=== Soft-UE Complete End-to-End Test ===");
     NS_LOG_INFO ("Testing full integration of src/soft-ue/model modules");
 
-    // Test parameters
-    uint32_t packetSize = 512;    // bytes
-    uint32_t numPackets = 10;      // packets
-    uint16_t serverPort = 8000;    // UDP port
+    // Initialize configuration with defaults
+    SoftUeTestConfig config;
     bool enableTracing = true;
 
-    // Command line arguments
+    // Command line arguments for configuration
     CommandLine cmd;
-    cmd.AddValue ("packetSize", "Size of each packet in bytes", packetSize);
-    cmd.AddValue ("numPackets", "Number of packets to send", numPackets);
-    cmd.AddValue ("serverPort", "Server UDP port", serverPort);
+    cmd.AddValue ("packetSize", "Size of each packet in bytes", config.packetSize);
+    cmd.AddValue ("numPackets", "Number of packets to send", config.packetCount);
+    cmd.AddValue ("serverPort", "Server UDP port", config.serverPort);
+    cmd.AddValue ("nodeCount", "Number of nodes to create", config.nodeCount);
+    cmd.AddValue ("sendInterval", "Send interval in nanoseconds", config.sendInterval);
+    cmd.AddValue ("maxPdcCount", "Maximum PDC count per device", config.maxPdcCount);
+    cmd.AddValue ("networkBase", "Network base address", config.networkBase);
+    cmd.AddValue ("subnetMask", "Subnet mask", config.subnetMask);
+    cmd.AddValue ("serverStartTime", "Server start time in seconds", config.serverStartTime);
+    cmd.AddValue ("clientStartTime", "Client start time in seconds", config.clientStartTime);
     cmd.AddValue ("enableTracing", "Enable packet tracing", enableTracing);
     cmd.Parse (argc, argv);
 
-    NS_LOG_INFO ("Configuration: " << numPackets << " packets of " << packetSize
-                << " bytes each, port " << serverPort);
+    NS_LOG_INFO ("Configuration: " << config.packetCount << " packets of " << config.packetSize
+                << " bytes each, port " << config.serverPort);
 
-    // Create 2 nodes for 1-to-1 communication
+    // Create nodes for communication
     NodeContainer nodes;
-    nodes.Create (2);
+    nodes.Create (config.nodeCount);
 
     // Install Soft-UE devices
     SoftUeHelper helper;
-    helper.SetDeviceAttribute ("MaxPdcCount", UintegerValue (1024));
+    helper.SetDeviceAttribute ("MaxPdcCount", UintegerValue (config.maxPdcCount));
     helper.SetDeviceAttribute ("EnableStatistics", BooleanValue (true));
 
     NetDeviceContainer devices = helper.Install (nodes);
@@ -644,7 +717,7 @@ main (int argc, char *argv[])
 
     // Assign IP addresses
     Ipv4AddressHelper address;
-    address.SetBase ("10.1.1.0", "255.255.255.0");
+    address.SetBase (config.networkBase.c_str (), config.subnetMask.c_str ());
     Ipv4InterfaceContainer interfaces = address.Assign (devices);
 
     // Debug: Print IP addresses
@@ -652,33 +725,42 @@ main (int argc, char *argv[])
     NS_LOG_INFO ("Node 1 IP: " << interfaces.GetAddress (1));
 
     // Create applications - simplified for debugging
-    // Create proper destination address for server (FEP = 2)
-    // According to ExtractFepFromAddress, FEP is stored in last 2 bytes of MAC address
-    uint8_t macBytes[6];
-    macBytes[0] = 0x02;
-    macBytes[1] = 0x06;
-    macBytes[2] = 0x00;
-    macBytes[3] = 0x00;
-    macBytes[4] = 0x00;  // High byte of FEP
-    macBytes[5] = 0x02;  // Low byte of FEP (2)
+    // Get actual server device FEP address from installed device
+    Ptr<SoftUeNetDevice> serverDevice = DynamicCast<SoftUeNetDevice> (devices.Get (1));
+    Mac48Address serverMacAddr;
+    uint32_t serverFep = 0;
+    if (serverDevice)
+    {
+        SoftUeConfig serverConfig = serverDevice->GetConfiguration ();
+        serverMacAddr = serverConfig.address;
+        serverFep = serverConfig.localFep;
+        NS_LOG_INFO ("✓ Retrieved server device configuration");
+    }
+    else
+    {
+        // Fallback to using device index + 1 as FEP
+        serverMacAddr = Mac48Address::Allocate ();
+        serverFep = 2;  // Node 1 -> FEP 2
+    }
 
-    Mac48Address serverMacAddr = Mac48Address::Allocate ();
-    // Manually set the bytes using the setter method if available, or use ConvertFrom
-    serverMacAddr = Mac48Address ("00:00:00:00:00:02");  // Simple format with FEP=2
     Address serverAddress = serverMacAddr;
-    NS_LOG_INFO ("Server address: " << serverAddress << " (FEP=2)");
+    NS_LOG_INFO ("Server address: " << serverAddress << " (FEP=" << serverFep << ")");
 
     // Calculate required time based on number of packets (Data center level latency)
-    double requiredClientTime = 2.0 + (numPackets * 0.0000005) + 0.001; // Start at 2s, 500ns per packet, +1ms buffer
-    double requiredServerTime = requiredClientTime + 0.001; // Server runs longer, +1ms buffer
+    double packetIntervalSeconds = config.sendInterval.GetNanoSeconds () / 1000000000.0;
+    double requiredClientTime = config.clientStartTime.GetSeconds () +
+                                (config.packetCount * packetIntervalSeconds) +
+                                config.timeBuffer.GetSeconds ();
+    double requiredServerTime = requiredClientTime + config.timeBuffer.GetSeconds (); // Server runs longer
 
     // Server application (node 1)
     Ptr<SoftUeFullApp> serverApp = CreateObject<SoftUeFullApp> ();
     if (serverApp)
     {
         NS_LOG_INFO ("✓ Created server application");
-        serverApp->Setup (0, 0, Address (), serverPort, true);
-        serverApp->SetStartTime (Seconds (1.0));
+        serverApp->SetConfiguration (config);
+        serverApp->Setup (0, 0, Address (), config.serverPort, true);
+        serverApp->SetStartTime (config.serverStartTime);
         serverApp->SetStopTime (Seconds (requiredServerTime));
         nodes.Get (1)->AddApplication (serverApp);
         NS_LOG_INFO ("✓ Server application installed");
@@ -689,8 +771,9 @@ main (int argc, char *argv[])
     if (clientApp)
     {
         NS_LOG_INFO ("✓ Created client application");
-        clientApp->Setup (packetSize, numPackets, serverAddress, serverPort, false);
-        clientApp->SetStartTime (Seconds (2.0));
+        clientApp->SetConfiguration (config);
+        clientApp->Setup (config.packetSize, config.packetCount, serverAddress, config.serverPort, false);
+        clientApp->SetStartTime (config.clientStartTime);
         clientApp->SetStopTime (Seconds (requiredClientTime));
         nodes.Get (0)->AddApplication (clientApp);
         NS_LOG_INFO ("✓ Client application installed");
@@ -715,10 +798,10 @@ main (int argc, char *argv[])
 
     NS_LOG_INFO ("Starting simulation...");
     NS_LOG_INFO ("Simulation parameters:");
-    NS_LOG_INFO ("  - Packet size: " << packetSize << " bytes");
-    NS_LOG_INFO ("  - Packet count: " << numPackets);
+    NS_LOG_INFO ("  - Packet size: " << config.packetSize << " bytes");
+    NS_LOG_INFO ("  - Packet count: " << config.packetCount);
     NS_LOG_INFO ("  - Simulation duration: " << simulationEndTime << " seconds");
-    NS_LOG_INFO ("  - Data center latency target: 500ns per packet");
+    NS_LOG_INFO ("  - Data center latency target: " << config.sendInterval.GetNanoSeconds () << "ns per packet");
     Simulator::Stop (Seconds (simulationEndTime));
     Simulator::Run ();
 
@@ -739,8 +822,8 @@ main (int argc, char *argv[])
     // Note: SES manager may have separate statistics methods
 
     // Test verification
-    bool testPassed = (clientApp->GetPacketCount () == numPackets) &&
-                     (serverApp->GetPacketCount () == numPackets) &&
+    bool testPassed = (clientApp->GetPacketCount () == config.packetCount) &&
+                     (serverApp->GetPacketCount () == config.packetCount) &&
                      (clientApp->GetSesProcessedCount () > 0) &&
                      (clientApp->GetPdsProcessedCount () > 0);
 
@@ -754,11 +837,11 @@ main (int argc, char *argv[])
 
     // Packet transmission verification
     NS_LOG_INFO ("Packet Transmission:");
-    NS_LOG_INFO ("  Expected packets:    " << numPackets);
+    NS_LOG_INFO ("  Expected packets:    " << config.packetCount);
     NS_LOG_INFO ("  Client processed:    " << clientApp->GetPacketCount () << " ("
-                << (numPackets > 0 ? (100.0 * clientApp->GetPacketCount () / numPackets) : 0) << "%)");
+                << (config.packetCount > 0 ? (100.0 * clientApp->GetPacketCount () / config.packetCount) : 0) << "%)");
     NS_LOG_INFO ("  Server received:    " << serverApp->GetPacketCount () << " ("
-                << (numPackets > 0 ? (100.0 * serverApp->GetPacketCount () / numPackets) : 0) << "%)");
+                << (config.packetCount > 0 ? (100.0 * serverApp->GetPacketCount () / config.packetCount) : 0) << "%)");
 
     // Protocol layer processing
     NS_LOG_INFO ("Protocol Layer Processing:");
