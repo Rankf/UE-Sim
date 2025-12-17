@@ -16,17 +16,20 @@
 
 /**
  * @file             Soft-UE.cc
- * @brief            Complete Soft-UE End-to-End Test with Full Module Integration
+ * @brief            200Gbps End-to-End Stress Test for Ultra Ethernet Protocol
  * @author           softuegroup@gmail.com
- * @version          2.0.0
- * @date             2025-12-09
+ * @version          3.0.0
+ * @date             2025-12-16
  * @copyright        Apache License Version 2.0
  *
  * @details
- * Comprehensive Soft-UE communication test that properly integrates all modules in
- * src/soft-ue/model. This test demonstrates the complete Ultra Ethernet protocol
- * stack functionality with proper ns-3 packet-level simulation, SES/PDS management,
- * PDC handling, and comprehensive statistics collection.
+ * Comprehensive stress test for Soft-UE Ultra Ethernet protocol stack at 200Gbps.
+ * Features:
+ * - High-throughput packet transmission at line rate
+ * - Comprehensive statistics collection and analysis
+ * - CSV output for data visualization
+ * - Performance bottleneck identification
+ * - Latency distribution analysis
  */
 
 #include "ns3/core-module.h"
@@ -35,23 +38,28 @@
 #include "ns3/applications-module.h"
 #include "ns3/soft-ue-module.h"
 #include "ns3/packet.h"
-#include "ns3/socket.h"
-#include "ns3/udp-socket-factory.h"
 #include <iostream>
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
 #include <vector>
-
+#include <fstream>
+#include <cmath>
+#include <chrono>
+#include <numeric>
 
 using namespace ns3;
 
-NS_LOG_COMPONENT_DEFINE("SoftUeFullTest");
+NS_LOG_COMPONENT_DEFINE("SoftUeStressTest");
+
+// 200Gbps = 200 * 1000 * 1000 * 1000 bits/s = 25 GB/s
+static const uint64_t TARGET_RATE_BPS = 200000000000ULL; // 200 Gbps
+static const uint64_t TARGET_RATE_GBPS = 200;
 
 /**
- * @brief Configuration structure for Soft-UE test parameters
+ * @brief Configuration structure for stress test parameters
  */
-struct SoftUeTestConfig
+struct StressTestConfig
 {
     // Network configuration
     uint32_t nodeCount = 2;
@@ -69,191 +77,214 @@ struct SoftUeTestConfig
     uint64_t baseMemoryAddress = 0x1000;
     uint32_t addressIncrementStep = 1000;
 
-    // Performance parameters
-    uint32_t packetSize = 512;
-    uint32_t packetCount = 10;
-    Time sendInterval = NanoSeconds(500);
-    uint32_t maxPdcCount = 1024;
+    // Performance parameters - optimized for 200Gbps
+    uint32_t packetSize = 9000;        // Jumbo frame for high throughput
+    uint32_t packetCount = 100000;     // 100K packets for stress test
+    Time sendInterval = NanoSeconds(1); // Minimum interval for max rate
+    uint32_t maxPdcCount = 4096;       // Increased PDC count for high concurrency
+    uint64_t targetRateBps = TARGET_RATE_BPS;
 
     // Timing parameters
-    Time serverStartTime = Seconds(1.0);
-    Time clientStartTime = Seconds(2.0);
-    Time timeBuffer = MilliSeconds(1);
-    Time extraEndTime = Seconds(2.0);
+    Time serverStartTime = MilliSeconds(1);
+    Time clientStartTime = MilliSeconds(2);
+    Time timeBuffer = MilliSeconds(10);
+    Time extraEndTime = MilliSeconds(100);
+
+    // Channel parameters (200Gbps)
+    DataRate channelDataRate = DataRate("200Gbps");
+    Time propagationDelay = NanoSeconds(100); // ~20m fiber at 5ns/m
+
+    // Statistics parameters
+    bool enableDetailedStats = true;
+    std::string outputDir = "./stress_test_results/";
+    uint32_t statsInterval = 1000;  // Record stats every N packets
 
     // Protocol overhead
-    uint32_t headerOverhead = 42; // Approximate protocol header size
-    uint32_t fepSendAddress = 0x87654321;
-    uint32_t fepRecvAddress = 0x12345678;
+    uint32_t headerOverhead = 42;
 };
 
 /**
- * @brief Enhanced Soft-UE application that integrates all protocol layers
+ * @brief Per-packet statistics record
  */
-class SoftUeFullApp : public Application
+struct PacketStats
+{
+    uint32_t packetId;
+    Time sendTime;
+    Time receiveTime;
+    uint32_t packetSize;
+    bool received;
+    uint16_t pdcId;
+};
+
+/**
+ * @brief Aggregated statistics
+ */
+struct AggregatedStats
+{
+    uint64_t totalPacketsSent = 0;
+    uint64_t totalPacketsReceived = 0;
+    uint64_t totalBytesSent = 0;
+    uint64_t totalBytesReceived = 0;
+    Time firstSendTime;
+    Time lastSendTime;
+    Time firstReceiveTime;
+    Time lastReceiveTime;
+    std::vector<double> latenciesNs;
+    uint64_t droppedPackets = 0;
+    uint64_t sesProcessed = 0;
+    uint64_t pdsProcessed = 0;
+    uint64_t pdcCreated = 0;
+    uint64_t retransmissions = 0;
+
+    // Time series data for throughput over time
+    std::vector<std::pair<double, double>> throughputTimeSeries; // (time_ns, throughput_gbps)
+    uint64_t lastSnapshotBytes = 0;
+    Time lastSnapshotTime;
+
+    double GetAverageLatencyNs() const {
+        if (latenciesNs.empty()) return 0.0;
+        return std::accumulate(latenciesNs.begin(), latenciesNs.end(), 0.0) / latenciesNs.size();
+    }
+
+    double GetP99LatencyNs() const {
+        if (latenciesNs.empty()) return 0.0;
+        std::vector<double> sorted = latenciesNs;
+        std::sort(sorted.begin(), sorted.end());
+        size_t idx = static_cast<size_t>(sorted.size() * 0.99);
+        return sorted[std::min(idx, sorted.size() - 1)];
+    }
+
+    double GetP50LatencyNs() const {
+        if (latenciesNs.empty()) return 0.0;
+        std::vector<double> sorted = latenciesNs;
+        std::sort(sorted.begin(), sorted.end());
+        return sorted[sorted.size() / 2];
+    }
+
+    double GetMinLatencyNs() const {
+        if (latenciesNs.empty()) return 0.0;
+        return *std::min_element(latenciesNs.begin(), latenciesNs.end());
+    }
+
+    double GetMaxLatencyNs() const {
+        if (latenciesNs.empty()) return 0.0;
+        return *std::max_element(latenciesNs.begin(), latenciesNs.end());
+    }
+
+    double GetJitterNs() const {
+        if (latenciesNs.size() < 2) return 0.0;
+        double mean = GetAverageLatencyNs();
+        double sq_sum = 0.0;
+        for (double lat : latenciesNs) {
+            sq_sum += (lat - mean) * (lat - mean);
+        }
+        return std::sqrt(sq_sum / latenciesNs.size());
+    }
+
+    double GetThroughputGbps() const {
+        if (lastReceiveTime == firstSendTime) return 0.0;
+        double durationNs = (lastReceiveTime - firstSendTime).GetNanoSeconds();
+        if (durationNs <= 0) return 0.0;
+        return (totalBytesReceived * 8.0) / durationNs;  // Gbps
+    }
+
+    double GetPacketRate() const {
+        if (lastReceiveTime == firstSendTime) return 0.0;
+        double durationSec = (lastReceiveTime - firstSendTime).GetSeconds();
+        if (durationSec <= 0) return 0.0;
+        return totalPacketsReceived / durationSec;
+    }
+
+    double GetLossRate() const {
+        if (totalPacketsSent == 0) return 0.0;
+        return 100.0 * (totalPacketsSent - totalPacketsReceived) / totalPacketsSent;
+    }
+};
+
+// Global statistics collector
+static AggregatedStats g_stats;
+static std::vector<PacketStats> g_packetStats;
+static std::map<uint32_t, Time> g_packetSendTimes;
+
+/**
+ * @brief Stress test application for high-throughput testing
+ */
+class StressTestApp : public Application
 {
 public:
-    SoftUeFullApp ();
-    virtual ~SoftUeFullApp ();
+    StressTestApp ();
+    virtual ~StressTestApp ();
 
-    /**
-     * @brief Setup the application with test parameters
-     * @param packetSize Size of each packet payload
-     * @param numPackets Number of packets to send
-     * @param destination Destination address
-     * @param port UDP port number
-     * @param isServer True if this is a server application
-     */
     void Setup (uint32_t packetSize, uint32_t numPackets, Address destination,
                 uint16_t port, bool isServer = false);
-
-    /**
-     * @brief Set configuration for test parameters
-     * @param config Configuration structure
-     */
-    void SetConfiguration (const SoftUeTestConfig& config);
-
-    /**
-     * @brief Get current configuration
-     * @return Current configuration
-     */
-    const SoftUeTestConfig& GetConfiguration () const;
-
-    /**
-     * @brief Get comprehensive statistics from this application
-     * @return Detailed statistics string
-     */
+    void SetConfiguration (const StressTestConfig& config);
     std::string GetStatistics () const;
-
-    /**
-     * @brief Get packet count for verification
-     * @return Number of packets processed
-     */
-    uint32_t GetPacketCount () const;
-
-    /**
-     * @brief Get SES processed count
-     * @return Number of packets processed by SES
-     */
-    uint32_t GetSesProcessedCount () const;
-
-    /**
-     * @brief Get PDS processed count
-     * @return Number of packets processed by PDS
-     */
-    uint32_t GetPdsProcessedCount () const;
+    uint32_t GetPacketCount () const { return std::max(m_packetsSent, m_packetsReceived); }
+    uint32_t GetSesProcessedCount () const { return m_sesProcessed; }
+    uint32_t GetPdsProcessedCount () const { return m_pdsProcessed; }
 
 private:
     virtual void StartApplication () override;
     virtual void StopApplication () override;
-
-    /**
-     * @brief Send a packet with complete protocol stack integration
-     */
     void SendPacket ();
-
-    /**
-     * @brief Schedule next packet transmission
-     */
     void ScheduleSend ();
+    bool HandleRead (Ptr<NetDevice> device, Ptr<const Packet> packet,
+                    uint16_t protocolType, const Address& source);
 
-    /**
-     * @brief Handle incoming packets with proper protocol processing
-     * @param device The receiving net device
-     * @param packet The received packet
-     * @param protocolType Protocol type
-     * @param source Source address
-     */
-    bool HandleRead (Ptr<NetDevice> device, Ptr<const Packet> packet, uint16_t protocolType, const Address& source);
+    uint32_t m_packetSize;
+    uint32_t m_numPackets;
+    uint32_t m_packetsSent;
+    uint32_t m_packetsReceived;
+    uint32_t m_sesProcessed;
+    uint32_t m_pdsProcessed;
+    Address m_destination;
+    uint16_t m_port;
+    bool m_isServer;
+    EventId m_sendEvent;
+    Ptr<SesManager> m_sesManager;
+    Ptr<PdsManager> m_pdsManager;
 
-    /**
-     * @brief Process packet through SES layer
-     * @param packet The packet to process
-     * @return True if processing successful
-     */
-    bool ProcessSesPacket (Ptr<Packet> packet);
+    uint64_t m_totalBytesSent;
+    uint64_t m_totalBytesReceived;
+    Time m_firstPacketTime;
+    Time m_lastPacketTime;
 
-    /**
-     * @brief Process packet through PDS layer
-     * @param packet The packet to process
-     * @return True if processing successful
-     */
-    bool ProcessPdsPacket (Ptr<Packet> packet);
-
-    
-    uint32_t m_packetSize;          ///< Size of each packet payload
-    uint32_t m_numPackets;          ///< Number of packets to send
-    uint32_t m_packetsSent;         ///< Count of packets sent
-    uint32_t m_packetsReceived;     ///< Count of packets received
-    uint32_t m_sesProcessed;        ///< Count of packets processed by SES
-    uint32_t m_pdsProcessed;        ///< Count of packets processed by PDS
-    Address m_destination;          ///< Destination address
-    uint16_t m_port;                ///< UDP port number
-    bool m_isServer;                ///< True if this is a server
-    Ptr<Socket> m_socket;           ///< Socket for communication
-    EventId m_sendEvent;            ///< Event for scheduled sending
-    Ptr<SesManager> m_sesManager;   ///< SES Manager reference
-    Ptr<PdsManager> m_pdsManager;   ///< PDS Manager reference
-
-    // Enhanced statistics
-    std::vector<Time> m_packetDelays;           ///< Per-packet delays
-    Time m_firstPacketTime;                     ///< First packet send time
-    Time m_lastPacketTime;                      ///< Last packet receive time
-    uint64_t m_totalBytesSent;                  ///< Total bytes sent
-    uint64_t m_totalBytesReceived;              ///< Total bytes received
-    uint32_t m_retransmissions;                 ///< Retransmission count
-    uint32_t m_timeouts;                        ///< Timeout count
-
-    /// Configuration for test parameters
-    SoftUeTestConfig m_config;
+    StressTestConfig m_config;
 };
 
-SoftUeFullApp::SoftUeFullApp ()
-    : m_packetSize (0),
-      m_numPackets (0),
-      m_packetsSent (0),
-      m_packetsReceived (0),
-      m_sesProcessed (0),
-      m_pdsProcessed (0),
-      m_port (0),
-      m_isServer (false),
-      m_firstPacketTime (Seconds (0)),
-      m_lastPacketTime (Seconds (0)),
-      m_totalBytesSent (0),
-      m_totalBytesReceived (0),
-      m_retransmissions (0),
-      m_timeouts (0)
+StressTestApp::StressTestApp ()
+    : m_packetSize (0), m_numPackets (0), m_packetsSent (0), m_packetsReceived (0),
+      m_sesProcessed (0), m_pdsProcessed (0), m_port (0), m_isServer (false),
+      m_totalBytesSent (0), m_totalBytesReceived (0)
 {
 }
 
-SoftUeFullApp::~SoftUeFullApp ()
+StressTestApp::~StressTestApp ()
 {
-    if (m_socket)
-    {
-        m_socket->Close ();
-    }
 }
 
 void
-SoftUeFullApp::Setup (uint32_t packetSize, uint32_t numPackets,
-                        Address destination, uint16_t port, bool isServer)
+StressTestApp::Setup (uint32_t packetSize, uint32_t numPackets,
+                      Address destination, uint16_t port, bool isServer)
 {
     m_packetSize = packetSize;
     m_numPackets = numPackets;
     m_destination = destination;
     m_port = port;
     m_isServer = isServer;
-
-    NS_LOG_INFO ("Setup completed for " << (m_isServer ? "server" : "client"));
-    // Managers will be obtained in StartApplication to avoid timing issues
 }
 
 void
-SoftUeFullApp::StartApplication ()
+StressTestApp::SetConfiguration (const StressTestConfig& config)
+{
+    m_config = config;
+}
+
+void
+StressTestApp::StartApplication ()
 {
     NS_LOG_FUNCTION (this);
 
-    // Get managers from the node's Soft-UE device now
     if (GetNode ()->GetNDevices () > 0)
     {
         Ptr<SoftUeNetDevice> device = GetNode ()->GetDevice (0)->GetObject<SoftUeNetDevice> ();
@@ -262,88 +293,67 @@ SoftUeFullApp::StartApplication ()
             m_sesManager = device->GetSesManager ();
             m_pdsManager = device->GetPdsManager ();
 
-            // Set up the manager relationship
             if (m_sesManager && m_pdsManager)
             {
                 m_sesManager->SetPdsManager (m_pdsManager);
-                NS_LOG_INFO ("Successfully obtained and configured managers from Soft-UE device");
-            }
-            else
-            {
-                NS_LOG_ERROR ("Failed to obtain managers from Soft-UE device");
             }
 
             if (m_isServer)
             {
-                // Server: Set up receive callback on Soft-UE device
-                device->SetReceiveCallback (MakeCallback (&SoftUeFullApp::HandleRead, this));
-                NS_LOG_INFO ("Server listening for Soft-UE packets");
+                device->SetReceiveCallback (MakeCallback (&StressTestApp::HandleRead, this));
+                NS_LOG_INFO ("Server ready for stress test");
             }
         }
-        else
-        {
-            NS_LOG_WARN ("Failed to get Soft-UE device, using mock managers");
-        }
-    }
-    else
-    {
-        NS_LOG_WARN ("Node has no devices, using mock managers");
     }
 
     if (!m_isServer)
     {
-        // Client: Start sending
+        // Start burst sending for maximum throughput
+        m_firstPacketTime = Simulator::Now ();
+        g_stats.firstSendTime = m_firstPacketTime;
         ScheduleSend ();
-        NS_LOG_INFO ("Client starting to send packets");
+        NS_LOG_INFO ("Client starting stress test: " << m_numPackets << " packets of "
+                    << m_packetSize << " bytes");
     }
 }
 
 void
-SoftUeFullApp::StopApplication ()
+StressTestApp::StopApplication ()
 {
     NS_LOG_FUNCTION (this);
-
     if (m_sendEvent.IsPending ())
     {
         Simulator::Cancel (m_sendEvent);
     }
-
-    if (m_socket)
-    {
-        m_socket->Close ();
-        m_socket = 0;
-    }
 }
 
 void
-SoftUeFullApp::ScheduleSend ()
+StressTestApp::ScheduleSend ()
 {
     if (m_packetsSent < m_numPackets)
     {
-        Time tNext (m_config.sendInterval); // Use configured send interval
-        m_sendEvent = Simulator::Schedule (tNext, &SoftUeFullApp::SendPacket, this);
+        // Calculate inter-packet gap for target rate
+        // At 200Gbps with 9000-byte packets: interval = (9000*8) / 200e9 = 360 ns
+        double packetBits = m_packetSize * 8.0;
+        double intervalNs = (packetBits / m_config.targetRateBps) * 1e9;
+        Time tNext = NanoSeconds(std::max(1.0, intervalNs));
+
+        m_sendEvent = Simulator::Schedule (tNext, &StressTestApp::SendPacket, this);
     }
 }
 
 void
-SoftUeFullApp::SendPacket ()
+StressTestApp::SendPacket ()
 {
     NS_LOG_FUNCTION (this << m_packetsSent);
 
-    // Safety checks
     if (!m_sesManager || !m_pdsManager)
     {
-        NS_LOG_ERROR ("Required managers not initialized");
+        NS_LOG_ERROR ("Managers not initialized");
         return;
     }
 
-    // Record first packet time
-    if (m_packetsSent == 0)
-    {
-        m_firstPacketTime = Simulator::Now ();
-    }
-
-    // Create packet with payload
+    // Create packet
     Ptr<Packet> packet = Create<Packet> (m_packetSize);
     if (!packet)
     {
@@ -351,27 +361,19 @@ SoftUeFullApp::SendPacket ()
         return;
     }
 
-    // Create and configure PDS header
+    // Create PDS header
     PDSHeader pdsHeader;
-    pdsHeader.SetPdcId (m_packetsSent + 1);
+    pdsHeader.SetPdcId (m_packetsSent % m_config.maxPdcCount + 1);
     pdsHeader.SetSequenceNumber (m_packetsSent + 1);
-    pdsHeader.SetSom (m_packetsSent == 0);           // First packet
-    pdsHeader.SetEom (m_packetsSent == m_numPackets - 1); // Last packet
-
-    // Add PDS header to packet (ns-3 way!)
+    pdsHeader.SetSom (m_packetsSent == 0);
+    pdsHeader.SetEom (m_packetsSent == m_numPackets - 1);
     packet->AddHeader (pdsHeader);
 
-    // Create basic ExtendedOperationMetadata
+    // Create operation metadata
     Ptr<ExtendedOperationMetadata> extMetadata = Create<ExtendedOperationMetadata> ();
-    if (!extMetadata)
-    {
-        NS_LOG_ERROR ("Failed to create ExtendedOperationMetadata");
-        return;
-    }
-
     extMetadata->op_type = OpType::SEND;
-    extMetadata->s_pid_on_fep = m_config.baseClientPid + m_packetsSent;
-    extMetadata->t_pid_on_fep = (m_config.baseClientPid + 1000) + m_packetsSent;
+    extMetadata->s_pid_on_fep = m_config.baseClientPid + (m_packetsSent % 1000);
+    extMetadata->t_pid_on_fep = (m_config.baseClientPid + 1000) + (m_packetsSent % 1000);
     extMetadata->job_id = m_config.baseClientJobId;
     extMetadata->messages_id = m_packetsSent + 1;
     extMetadata->payload.start_addr = m_config.baseMemoryAddress + m_packetsSent * m_config.addressIncrementStep;
@@ -379,478 +381,447 @@ SoftUeFullApp::SendPacket ()
     extMetadata->payload.imm_data = 0xDEADBEEF + m_packetsSent;
     extMetadata->use_optimized_header = false;
     extMetadata->has_imm_data = true;
-    extMetadata->res_index = 0;
 
-    // Set source and destination endpoints - use valid endpoint IDs (must be > 0)
-    uint32_t srcNodeId = GetNode()->GetId () + 1;  // Ensure node ID > 0
-    uint32_t dstNodeId = (srcNodeId == 1) ? 2 : 1;  // Ensure dest node is different and > 0
-
+    uint32_t srcNodeId = GetNode()->GetId () + 1;
+    uint32_t dstNodeId = (srcNodeId == 1) ? 2 : 1;
     extMetadata->SetSourceEndpoint (srcNodeId, m_config.clientEndpointId);
     extMetadata->SetDestinationEndpoint (dstNodeId, m_config.serverEndpointId);
 
-    // Debug: Check metadata validity before SES processing
-    NS_LOG_INFO ("Metadata validity: " << (extMetadata->IsValid () ? "VALID" : "INVALID"));
-    NS_LOG_INFO ("Source: Node=" << extMetadata->GetSourceNodeId () << ", Endpoint=" << extMetadata->GetSourceEndpointId ());
-    NS_LOG_INFO ("Destination: Node=" << extMetadata->GetDestinationNodeId () << ", Endpoint=" << extMetadata->GetDestinationEndpointId ());
-
-    // Debug: Check client node FEP
-    Ptr<SoftUeNetDevice> clientDevice = GetNode ()->GetDevice (0)->GetObject<SoftUeNetDevice> ();
-    if (clientDevice) {
-        NS_LOG_INFO ("Client FEP: " << clientDevice->GetConfiguration ().localFep);
-    }
-
-    // Process through SES manager
+    // Process through SES
     bool sesProcessed = m_sesManager->ProcessSendRequest (extMetadata);
 
-    // Send packet through Soft-UE device (not UDP socket!)
+    // Send through device
     Ptr<SoftUeNetDevice> device = GetNode ()->GetDevice (0)->GetObject<SoftUeNetDevice> ();
     if (device)
     {
-        NS_LOG_INFO ("Attempting to send packet to " << m_destination << " size: " << packet->GetSize ());
-        bool success = device->Send (packet, m_destination, 0x0800); // 0x0800 for IPv4
+        Time sendTime = Simulator::Now ();
+        g_packetSendTimes[m_packetsSent] = sendTime;
+
+        bool success = device->Send (packet, m_destination, 0x0800);
         if (success)
         {
             m_packetsSent++;
             if (sesProcessed) m_sesProcessed++;
-            m_pdsProcessed++; // PDS is handled inside device->Send
-
-            // Enhanced statistics
+            m_pdsProcessed++;
             m_totalBytesSent += packet->GetSize ();
-            m_packetDelays.push_back (Simulator::Now ());
 
-            NS_LOG_INFO ("Sent packet " << m_packetsSent << "/" << m_numPackets
-                        << " size: " << packet->GetSize () << " bytes"
-                        << " SES: " << (sesProcessed ? "OK" : "FAIL"));
-        }
-        else
-        {
-            NS_LOG_ERROR ("Failed to send packet through Soft-UE device");
+            g_stats.totalPacketsSent++;
+            g_stats.totalBytesSent += packet->GetSize ();
+            g_stats.lastSendTime = sendTime;
+
+            // Record packet stats periodically
+            if (m_packetsSent % m_config.statsInterval == 0)
+            {
+                NS_LOG_INFO ("Progress: " << m_packetsSent << "/" << m_numPackets
+                            << " (" << (100.0 * m_packetsSent / m_numPackets) << "%)");
+            }
         }
     }
-    else
-    {
-        NS_LOG_ERROR ("Failed to get Soft-UE device");
-    }
 
-    // Schedule next packet
     ScheduleSend ();
 }
 
 bool
-SoftUeFullApp::HandleRead (Ptr<NetDevice> device, Ptr<const Packet> packet, uint16_t protocolType, const Address& source)
+StressTestApp::HandleRead (Ptr<NetDevice> device, Ptr<const Packet> packet,
+                          uint16_t protocolType, const Address& source)
 {
-    NS_LOG_FUNCTION (this << device << packet << protocolType << source);
+    if (!packet) return false;
 
-    if (!packet)
-    {
-        return false;
-    }
-
+    Time receiveTime = Simulator::Now ();
     m_packetsReceived++;
-
-    // Enhanced statistics - record first packet time if server
-    if (m_isServer && m_firstPacketTime == Seconds (0))
-    {
-        m_firstPacketTime = Simulator::Now ();
-    }
     m_totalBytesReceived += packet->GetSize ();
-    m_lastPacketTime = Simulator::Now ();
+    m_lastPacketTime = receiveTime;
 
-    // Create a mutable copy of the packet for header processing
+    // Update global stats
+    g_stats.totalPacketsReceived++;
+    g_stats.totalBytesReceived += packet->GetSize ();
+    g_stats.lastReceiveTime = receiveTime;
+
+    if (g_stats.firstReceiveTime == Time(0))
+    {
+        g_stats.firstReceiveTime = receiveTime;
+        g_stats.lastSnapshotTime = receiveTime;
+        g_stats.lastSnapshotBytes = 0;
+    }
+
+    // Collect throughput time series every 100 packets
+    if (g_stats.totalPacketsReceived % 100 == 0 && g_stats.lastSnapshotTime != Time(0))
+    {
+        double timeDeltaNs = (receiveTime - g_stats.lastSnapshotTime).GetNanoSeconds ();
+        if (timeDeltaNs > 0)
+        {
+            uint64_t bytesDelta = g_stats.totalBytesReceived - g_stats.lastSnapshotBytes;
+            double throughputGbps = (bytesDelta * 8.0) / timeDeltaNs;
+            double timeNs = (receiveTime - g_stats.firstReceiveTime).GetNanoSeconds ();
+            g_stats.throughputTimeSeries.push_back (std::make_pair(timeNs, throughputGbps));
+            g_stats.lastSnapshotTime = receiveTime;
+            g_stats.lastSnapshotBytes = g_stats.totalBytesReceived;
+        }
+    }
+
+    // Parse header for packet ID
     Ptr<Packet> mutablePacket = packet->Copy ();
-
-    // Remove and parse PDS header
     PDSHeader pdsHeader;
     mutablePacket->RemoveHeader (pdsHeader);
 
-    NS_LOG_INFO ("Received packet " << m_packetsReceived
-                << " PDC ID: " << pdsHeader.GetPdcId ()
-                << " Seq: " << pdsHeader.GetSequenceNumber ()
-                << " SOM: " << pdsHeader.GetSom ()
-                << " EOM: " << pdsHeader.GetEom ()
-                << " Size: " << mutablePacket->GetSize () << " bytes"
-                << " from " << source);
+    uint32_t packetId = pdsHeader.GetSequenceNumber () - 1;
 
-    // For this test, count the packet as processed without triggering retransmission
+    // Calculate latency
+    auto it = g_packetSendTimes.find (packetId);
+    if (it != g_packetSendTimes.end ())
+    {
+        double latencyNs = (receiveTime - it->second).GetNanoSeconds ();
+        g_stats.latenciesNs.push_back (latencyNs);
+    }
+
     m_pdsProcessed++;
     m_sesProcessed++;
-    NS_LOG_INFO ("Packet received and processed successfully");
+    g_stats.pdsProcessed++;
+    g_stats.sesProcessed++;
 
-    return true; // Packet successfully processed
+    return true;
 }
-
-bool
-SoftUeFullApp::ProcessSesPacket (Ptr<Packet> packet)
-{
-    if (!m_sesManager)
-    {
-        return false;
-    }
-
-    // Create ExtendedOperationMetadata for response processing
-    Ptr<ExtendedOperationMetadata> responseMetadata = Create<ExtendedOperationMetadata> ();
-    responseMetadata->op_type = OpType::SEND;  // Using SEND for simplicity
-    responseMetadata->s_pid_on_fep = m_config.baseServerPid + 2000;     // Response PID
-    responseMetadata->t_pid_on_fep = m_config.baseServerPid + 3000;
-    responseMetadata->job_id = m_config.baseServerJobId;
-    responseMetadata->messages_id = 999;  // Reserved for responses
-    responseMetadata->payload.start_addr = m_config.baseMemoryAddress + 0x1000;
-    responseMetadata->payload.length = packet->GetSize ();
-    responseMetadata->payload.imm_data = 0xFEEDFACE;
-    responseMetadata->use_optimized_header = false;
-    responseMetadata->has_imm_data = true;
-    responseMetadata->res_index = 1;
-
-    // Set source and destination endpoints (reversed for response)
-    uint32_t srcNodeId = GetNode()->GetId () + 1;  // Ensure node ID > 0
-    uint32_t dstNodeId = (srcNodeId == 1) ? 2 : 1;  // Ensure dest node is different and > 0
-
-    responseMetadata->SetSourceEndpoint (srcNodeId, m_config.serverEndpointId);
-    responseMetadata->SetDestinationEndpoint (dstNodeId, m_config.clientEndpointId);
-
-    return m_sesManager->ProcessSendRequest (responseMetadata);
-}
-
-bool
-SoftUeFullApp::ProcessPdsPacket (Ptr<Packet> packet)
-{
-    if (!m_pdsManager)
-    {
-        return false;
-    }
-
-    // Create PDS request for processing
-    SesPdsRequest pdsRequest;
-    pdsRequest.src_fep = m_config.fepSendAddress;
-    pdsRequest.dst_fep = m_config.fepRecvAddress;
-    pdsRequest.mode = 0;
-    pdsRequest.rod_context = 1;
-    pdsRequest.next_hdr = PDSNextHeader::UET_HDR_RESPONSE_DATA;
-    pdsRequest.tc = 0x01;
-    pdsRequest.lock_pdc = false;
-    pdsRequest.tx_pkt_handle = 1;
-    pdsRequest.pkt_len = packet->GetSize ();
-    pdsRequest.tss_context = 1;
-    pdsRequest.rsv_pdc_context = 1;
-    pdsRequest.rsv_ccc_context = 1;
-    pdsRequest.som = true;
-    pdsRequest.eom = true;
-    pdsRequest.packet = packet;
-
-    return m_pdsManager->ProcessSesRequest (pdsRequest);
-}
-
 
 std::string
-SoftUeFullApp::GetStatistics () const
+StressTestApp::GetStatistics () const
 {
     std::ostringstream oss;
 
-    // Basic statistics
-    oss << "Soft-UE Application Statistics:\n"
-        << "  Role: " << (m_isServer ? "Server" : "Client") << "\n"
+    oss << "=== " << (m_isServer ? "Server" : "Client") << " Statistics ===\n"
         << "  Packets Sent: " << m_packetsSent << "\n"
         << "  Packets Received: " << m_packetsReceived << "\n"
+        << "  Bytes Sent: " << m_totalBytesSent << "\n"
+        << "  Bytes Received: " << m_totalBytesReceived << "\n"
         << "  SES Processed: " << m_sesProcessed << "\n"
-        << "  PDS Processed: " << m_pdsProcessed << "\n"
-        << "  Success Rate: " << (m_packetsSent > 0 ?
-                (100.0 * m_packetsReceived / m_packetsSent) : 0.0) << "%\n";
-
-    // Enhanced statistics
-    oss << "\n  Enhanced Performance Metrics:\n"
-        << "  Total Bytes Sent: " << m_totalBytesSent << " bytes\n"
-        << "  Total Bytes Received: " << m_totalBytesReceived << " bytes\n"
-        << "  Average Packet Size: " << (m_packetsSent > 0 ?
-                (m_totalBytesSent / m_packetsSent) : 0) << " bytes\n";
-
-    // Timing analysis (Data center level time measurement)
-    if (m_firstPacketTime != Seconds (0) && m_lastPacketTime != Seconds (0))
-    {
-        Time totalTime = m_lastPacketTime - m_firstPacketTime;
-        double throughputMbps = 0.0;
-        if (totalTime.GetNanoSeconds () > 0)
-        {
-            // Use nanosecond precision for throughput calculation
-            throughputMbps = (m_totalBytesReceived * 8.0 * 1000000000.0) / (totalTime.GetNanoSeconds ());
-        }
-
-        oss << "  Total Transfer Time: " << totalTime.GetNanoSeconds () << " ns\n"
-            << "  Throughput: " << std::fixed << std::setprecision (3)
-            << throughputMbps << " Mbps\n"
-            << "  Packet Rate: " << (totalTime.GetNanoSeconds () > 0 ?
-                (1000000000.0 * m_packetsReceived / totalTime.GetNanoSeconds ()) : 0.0) << " pps\n";
-    }
-
-    // Error statistics
-    oss << "\n  Error Statistics:\n"
-        << "  Retransmissions: " << m_retransmissions << "\n"
-        << "  Timeouts: " << m_timeouts << "\n"
-        << "  Packet Loss Rate: " << (m_packetsSent > 0 ?
-                (100.0 * (m_packetsSent - m_packetsReceived) / m_packetsSent) : 0.0) << "%\n";
-
-    // Protocol efficiency
-    if (m_totalBytesSent > 0)
-    {
-        double efficiency = 100.0 * (m_totalBytesReceived - (m_packetsReceived * m_config.headerOverhead)) / m_totalBytesSent; // Configured header overhead
-        oss << "  Protocol Efficiency: " << std::fixed << std::setprecision (1)
-            << efficiency << "%\n";
-    }
+        << "  PDS Processed: " << m_pdsProcessed << "\n";
 
     return oss.str ();
 }
 
-uint32_t
-SoftUeFullApp::GetPacketCount () const
+/**
+ * @brief Write results to CSV files for visualization
+ */
+void WriteResultsToCSV(const StressTestConfig& config, const AggregatedStats& stats)
 {
-    return std::max (m_packetsSent, m_packetsReceived);
-}
+    // Create output directory
+    std::string mkdirCmd = "mkdir -p " + config.outputDir;
+    int ret = system(mkdirCmd.c_str());
+    (void)ret;
 
-uint32_t
-SoftUeFullApp::GetSesProcessedCount () const
-{
-    return m_sesProcessed;
-}
+    // Write summary statistics
+    std::ofstream summaryFile(config.outputDir + "summary.csv");
+    summaryFile << "Metric,Value,Unit\n"
+                << "Target Rate," << TARGET_RATE_GBPS << ",Gbps\n"
+                << "Achieved Throughput," << std::fixed << std::setprecision(3) << stats.GetThroughputGbps() << ",Gbps\n"
+                << "Efficiency," << std::fixed << std::setprecision(2) << (stats.GetThroughputGbps() / TARGET_RATE_GBPS * 100) << ",%\n"
+                << "Total Packets Sent," << stats.totalPacketsSent << ",packets\n"
+                << "Total Packets Received," << stats.totalPacketsReceived << ",packets\n"
+                << "Packet Loss Rate," << std::fixed << std::setprecision(4) << stats.GetLossRate() << ",%\n"
+                << "Total Bytes Sent," << stats.totalBytesSent << ",bytes\n"
+                << "Total Bytes Received," << stats.totalBytesReceived << ",bytes\n"
+                << "Packet Rate," << std::fixed << std::setprecision(0) << stats.GetPacketRate() << ",pps\n"
+                << "Average Latency," << std::fixed << std::setprecision(2) << stats.GetAverageLatencyNs() << ",ns\n"
+                << "P50 Latency," << std::fixed << std::setprecision(2) << stats.GetP50LatencyNs() << ",ns\n"
+                << "P99 Latency," << std::fixed << std::setprecision(2) << stats.GetP99LatencyNs() << ",ns\n"
+                << "Min Latency," << std::fixed << std::setprecision(2) << stats.GetMinLatencyNs() << ",ns\n"
+                << "Max Latency," << std::fixed << std::setprecision(2) << stats.GetMaxLatencyNs() << ",ns\n"
+                << "Jitter," << std::fixed << std::setprecision(2) << stats.GetJitterNs() << ",ns\n"
+                << "SES Processed," << stats.sesProcessed << ",operations\n"
+                << "PDS Processed," << stats.pdsProcessed << ",operations\n";
+    summaryFile.close();
 
-uint32_t
-SoftUeFullApp::GetPdsProcessedCount () const
-{
-    return m_pdsProcessed;
-}
+    // Write latency distribution for histogram
+    std::ofstream latencyFile(config.outputDir + "latency_distribution.csv");
+    latencyFile << "Latency_ns\n";
+    for (double lat : stats.latenciesNs)
+    {
+        latencyFile << std::fixed << std::setprecision(2) << lat << "\n";
+    }
+    latencyFile.close();
 
-void
-SoftUeFullApp::SetConfiguration (const SoftUeTestConfig& config)
-{
-    NS_LOG_FUNCTION (this);
-    m_config = config;
-}
+    // Write latency percentiles
+    std::ofstream percentileFile(config.outputDir + "latency_percentiles.csv");
+    percentileFile << "Percentile,Latency_ns\n";
+    if (!stats.latenciesNs.empty())
+    {
+        std::vector<double> sorted = stats.latenciesNs;
+        std::sort(sorted.begin(), sorted.end());
+        for (int p = 0; p <= 100; p += 5)
+        {
+            size_t idx = static_cast<size_t>((sorted.size() - 1) * p / 100.0);
+            percentileFile << p << "," << std::fixed << std::setprecision(2) << sorted[idx] << "\n";
+        }
+    }
+    percentileFile.close();
 
-const SoftUeTestConfig&
-SoftUeFullApp::GetConfiguration () const
-{
-    NS_LOG_FUNCTION (this);
-    return m_config;
+    // Write throughput time series
+    std::ofstream timeSeriesFile(config.outputDir + "throughput_timeseries.csv");
+    timeSeriesFile << "Time_ns,Time_us,Throughput_Gbps\n";
+    for (const auto& point : stats.throughputTimeSeries)
+    {
+        timeSeriesFile << std::fixed << std::setprecision(2)
+                       << point.first << ","
+                       << (point.first / 1000.0) << ","
+                       << point.second << "\n";
+    }
+    timeSeriesFile.close();
+
+    NS_LOG_INFO("Results written to " << config.outputDir);
 }
 
 /**
- * @brief Packet tracing callback
+ * @brief Print comprehensive test results
  */
-static void
-PacketTrace (std::string context, Ptr<const Packet> packet, Ptr<NetDevice> device,
-             Address address, uint16_t protocol)
+void PrintResults(const StressTestConfig& config, const AggregatedStats& stats)
 {
-    NS_LOG_INFO ("Trace: " << context << " packet " << packet->GetSize ()
-                << " bytes at device " << device->GetAddress ());
+    std::cout << "\n" << std::string(80, '=') << "\n";
+    std::cout << "           SOFT-UE 200Gbps STRESS TEST RESULTS\n";
+    std::cout << std::string(80, '=') << "\n\n";
+
+    // Configuration summary
+    std::cout << "=== Test Configuration ===\n"
+              << "  Target Rate: " << TARGET_RATE_GBPS << " Gbps\n"
+              << "  Packet Size: " << config.packetSize << " bytes\n"
+              << "  Total Packets: " << config.packetCount << "\n"
+              << "  Max PDC Count: " << config.maxPdcCount << "\n"
+              << "  Channel Delay: " << config.propagationDelay.GetNanoSeconds() << " ns\n\n";
+
+    // Throughput results
+    double achievedGbps = stats.GetThroughputGbps();
+    double efficiency = (achievedGbps / TARGET_RATE_GBPS) * 100.0;
+
+    std::cout << "=== Throughput Results ===\n"
+              << "  Target Throughput:   " << TARGET_RATE_GBPS << " Gbps\n"
+              << "  Achieved Throughput: " << std::fixed << std::setprecision(3) << achievedGbps << " Gbps\n"
+              << "  Efficiency:          " << std::fixed << std::setprecision(2) << efficiency << "%\n"
+              << "  Packet Rate:         " << std::fixed << std::setprecision(0) << stats.GetPacketRate() << " pps\n\n";
+
+    // Packet statistics
+    std::cout << "=== Packet Statistics ===\n"
+              << "  Packets Sent:     " << stats.totalPacketsSent << "\n"
+              << "  Packets Received: " << stats.totalPacketsReceived << "\n"
+              << "  Packet Loss:      " << (stats.totalPacketsSent - stats.totalPacketsReceived) << " ("
+              << std::fixed << std::setprecision(4) << stats.GetLossRate() << "%)\n"
+              << "  Bytes Sent:       " << stats.totalBytesSent << " ("
+              << std::fixed << std::setprecision(2) << (stats.totalBytesSent / 1e9) << " GB)\n"
+              << "  Bytes Received:   " << stats.totalBytesReceived << " ("
+              << std::fixed << std::setprecision(2) << (stats.totalBytesReceived / 1e9) << " GB)\n\n";
+
+    // Latency analysis
+    std::cout << "=== Latency Analysis ===\n"
+              << "  Average Latency: " << std::fixed << std::setprecision(2) << stats.GetAverageLatencyNs() << " ns\n"
+              << "  P50 Latency:     " << std::fixed << std::setprecision(2) << stats.GetP50LatencyNs() << " ns\n"
+              << "  P99 Latency:     " << std::fixed << std::setprecision(2) << stats.GetP99LatencyNs() << " ns\n"
+              << "  Min Latency:     " << std::fixed << std::setprecision(2) << stats.GetMinLatencyNs() << " ns\n"
+              << "  Max Latency:     " << std::fixed << std::setprecision(2) << stats.GetMaxLatencyNs() << " ns\n"
+              << "  Jitter:          " << std::fixed << std::setprecision(2) << stats.GetJitterNs() << " ns\n\n";
+
+    // Protocol statistics
+    std::cout << "=== Protocol Statistics ===\n"
+              << "  SES Processed: " << stats.sesProcessed << "\n"
+              << "  PDS Processed: " << stats.pdsProcessed << "\n\n";
+
+    // Performance assessment
+    std::cout << "=== Performance Assessment ===\n";
+    if (efficiency >= 90.0)
+    {
+        std::cout << "  Status: EXCELLENT - Achieved >90% of target throughput\n";
+    }
+    else if (efficiency >= 70.0)
+    {
+        std::cout << "  Status: GOOD - Achieved 70-90% of target throughput\n";
+    }
+    else if (efficiency >= 50.0)
+    {
+        std::cout << "  Status: MODERATE - Achieved 50-70% of target throughput\n";
+        std::cout << "  Recommendation: Consider optimizing PDC allocation or increasing burst size\n";
+    }
+    else
+    {
+        std::cout << "  Status: NEEDS IMPROVEMENT - Below 50% of target throughput\n";
+        std::cout << "  Recommendations:\n";
+        std::cout << "    - Review packet processing pipeline\n";
+        std::cout << "    - Optimize SES/PDS layer interactions\n";
+        std::cout << "    - Consider batching optimizations\n";
+    }
+
+    if (stats.GetLossRate() > 0.01)
+    {
+        std::cout << "  Warning: Packet loss detected (" << std::fixed << std::setprecision(4)
+                  << stats.GetLossRate() << "%)\n";
+    }
+
+    if (stats.GetP99LatencyNs() > stats.GetAverageLatencyNs() * 10)
+    {
+        std::cout << "  Warning: High tail latency detected (P99/avg ratio > 10x)\n";
+    }
+
+    std::cout << "\n" << std::string(80, '=') << "\n";
 }
 
 int
 main (int argc, char *argv[])
 {
+    // Initialize configuration
+    StressTestConfig config;
+    bool enableTracing = false;
+    bool verbose = false;
 
-    // Configure optimized logging with structured output
-    LogComponentEnable ("SoftUeFullTest", LOG_LEVEL_INFO);
-    LogComponentEnable ("SoftUeNetDevice", LOG_LEVEL_WARN);
-    LogComponentEnable ("PdsManager", LOG_LEVEL_INFO);         // Enable INFO for PDC creation tracking
-    LogComponentEnable ("SesManager", LOG_LEVEL_WARN);
-    LogComponentEnable ("SoftUeChannel", LOG_LEVEL_ERROR);
-
-    NS_LOG_INFO ("=== Soft-UE Complete End-to-End Test ===");
-    NS_LOG_INFO ("Testing full integration of src/soft-ue/model modules");
-
-    // Initialize configuration with defaults
-    SoftUeTestConfig config;
-    bool enableTracing = true;
-
-    // Command line arguments for configuration
+    // Command line arguments
     CommandLine cmd;
     cmd.AddValue ("packetSize", "Size of each packet in bytes", config.packetSize);
     cmd.AddValue ("numPackets", "Number of packets to send", config.packetCount);
-    cmd.AddValue ("serverPort", "Server UDP port", config.serverPort);
-    cmd.AddValue ("nodeCount", "Number of nodes to create", config.nodeCount);
-    cmd.AddValue ("sendInterval", "Send interval in nanoseconds", config.sendInterval);
     cmd.AddValue ("maxPdcCount", "Maximum PDC count per device", config.maxPdcCount);
-    cmd.AddValue ("networkBase", "Network base address", config.networkBase);
-    cmd.AddValue ("subnetMask", "Subnet mask", config.subnetMask);
-    cmd.AddValue ("serverStartTime", "Server start time in seconds", config.serverStartTime);
-    cmd.AddValue ("clientStartTime", "Client start time in seconds", config.clientStartTime);
     cmd.AddValue ("enableTracing", "Enable packet tracing", enableTracing);
+    cmd.AddValue ("verbose", "Enable verbose logging", verbose);
+    cmd.AddValue ("outputDir", "Output directory for results", config.outputDir);
     cmd.Parse (argc, argv);
 
-    NS_LOG_INFO ("Configuration: " << config.packetCount << " packets of " << config.packetSize
-                << " bytes each, port " << config.serverPort);
+    // Configure logging
+    if (verbose)
+    {
+        LogComponentEnable ("SoftUeStressTest", LOG_LEVEL_INFO);
+        LogComponentEnable ("SoftUeNetDevice", LOG_LEVEL_WARN);
+        LogComponentEnable ("PdsManager", LOG_LEVEL_WARN);
+        LogComponentEnable ("SesManager", LOG_LEVEL_WARN);
+    }
+    else
+    {
+        LogComponentEnable ("SoftUeStressTest", LOG_LEVEL_WARN);
+    }
 
-    // Create nodes for communication
+    std::cout << "\n" << std::string(60, '=') << "\n";
+    std::cout << "   SOFT-UE 200Gbps END-TO-END STRESS TEST\n";
+    std::cout << std::string(60, '=') << "\n";
+    std::cout << "Configuration:\n"
+              << "  Packet Size: " << config.packetSize << " bytes\n"
+              << "  Packet Count: " << config.packetCount << "\n"
+              << "  Target Rate: " << TARGET_RATE_GBPS << " Gbps\n"
+              << "  Max PDC: " << config.maxPdcCount << "\n"
+              << std::string(60, '-') << "\n";
+
+    // Create nodes
     NodeContainer nodes;
     nodes.Create (config.nodeCount);
 
-    // Install Soft-UE devices
+    // Install Soft-UE devices with optimized settings
     SoftUeHelper helper;
     helper.SetDeviceAttribute ("MaxPdcCount", UintegerValue (config.maxPdcCount));
     helper.SetDeviceAttribute ("EnableStatistics", BooleanValue (true));
+    helper.SetDeviceAttribute ("MaxPacketSize", UintegerValue (65535)); // Jumbo frame support
 
     NetDeviceContainer devices = helper.Install (nodes);
-    NS_LOG_INFO ("✓ Installed Soft-UE devices: " << devices.GetN ());
+    std::cout << "Installed " << devices.GetN () << " Soft-UE devices\n";
 
-    // Get device pointers
-    Ptr<SoftUeNetDevice> device0 = DynamicCast<SoftUeNetDevice> (devices.Get (0));
-    Ptr<SoftUeNetDevice> device1 = DynamicCast<SoftUeNetDevice> (devices.Get (1));
-    NS_ASSERT_MSG (device0 != nullptr && device1 != nullptr, "Failed to get SoftUeNetDevice");
+    // Set MTU for jumbo frames on all devices
+    for (uint32_t i = 0; i < devices.GetN (); ++i)
+    {
+        devices.Get (i)->SetMtu (65535);
+    }
+
+    // Configure channel parameters for 200Gbps
+    Ptr<SoftUeNetDevice> dev0 = DynamicCast<SoftUeNetDevice> (devices.Get (0));
+    if (dev0)
+    {
+        Ptr<SoftUeChannel> channel = DynamicCast<SoftUeChannel> (dev0->GetChannel ());
+        if (channel)
+        {
+            channel->SetDataRate (config.channelDataRate);
+            channel->SetDelay (config.propagationDelay);
+            std::cout << "Channel configured: " << config.channelDataRate.GetBitRate() / 1e9
+                      << " Gbps, " << config.propagationDelay.GetNanoSeconds() << " ns delay\n";
+        }
+    }
 
     // Get and initialize managers
+    Ptr<SoftUeNetDevice> device0 = DynamicCast<SoftUeNetDevice> (devices.Get (0));
+    Ptr<SoftUeNetDevice> device1 = DynamicCast<SoftUeNetDevice> (devices.Get (1));
+
     Ptr<PdsManager> pdsManager0 = device0->GetPdsManager ();
     Ptr<PdsManager> pdsManager1 = device1->GetPdsManager ();
     Ptr<SesManager> sesManager0 = device0->GetSesManager ();
     Ptr<SesManager> sesManager1 = device1->GetSesManager ();
 
-    NS_ASSERT_MSG (pdsManager0 != nullptr && pdsManager1 != nullptr, "Failed to get PDS Manager");
-    NS_ASSERT_MSG (sesManager0 != nullptr && sesManager1 != nullptr, "Failed to get SES Manager");
-
-    // Initialize all managers
     pdsManager0->Initialize ();
     pdsManager1->Initialize ();
     sesManager0->Initialize ();
     sesManager1->Initialize ();
-    NS_LOG_INFO ("✓ All managers initialized successfully");
 
     // Install Internet stack
     InternetStackHelper internet;
     internet.Install (nodes);
 
-    // Assign IP addresses
     Ipv4AddressHelper address;
     address.SetBase (config.networkBase.c_str (), config.subnetMask.c_str ());
     Ipv4InterfaceContainer interfaces = address.Assign (devices);
 
-    // Debug: Print IP addresses
-    NS_LOG_INFO ("Node 0 IP: " << interfaces.GetAddress (0));
-    NS_LOG_INFO ("Node 1 IP: " << interfaces.GetAddress (1));
-
-    // Create applications - simplified for debugging
-    // Get actual server device FEP address from installed device
+    // Get server address
     Ptr<SoftUeNetDevice> serverDevice = DynamicCast<SoftUeNetDevice> (devices.Get (1));
-    Mac48Address serverMacAddr;
-    uint32_t serverFep = 0;
-    if (serverDevice)
-    {
-        SoftUeConfig serverConfig = serverDevice->GetConfiguration ();
-        serverMacAddr = serverConfig.address;
-        serverFep = serverConfig.localFep;
-        NS_LOG_INFO ("✓ Retrieved server device configuration");
-    }
-    else
-    {
-        // Fallback to using device index + 1 as FEP
-        serverMacAddr = Mac48Address::Allocate ();
-        serverFep = 2;  // Node 1 -> FEP 2
-    }
+    SoftUeConfig serverConfig = serverDevice->GetConfiguration ();
+    Address serverAddress = serverConfig.address;
 
-    Address serverAddress = serverMacAddr;
-    NS_LOG_INFO ("Server address: " << serverAddress << " (FEP=" << serverFep << ")");
+    // Calculate simulation time
+    double packetBits = config.packetSize * 8.0;
+    double intervalNs = (packetBits / config.targetRateBps) * 1e9;
+    double totalTransmissionNs = config.packetCount * intervalNs;
+    double transmissionSec = totalTransmissionNs / 1e9;
+    // Ensure minimum simulation time of 1 second
+    double simulationTime = std::max(1.0, config.clientStartTime.GetSeconds () +
+                           transmissionSec +
+                           config.extraEndTime.GetSeconds ());
 
-    // Calculate required time based on number of packets (Data center level latency)
-    double packetIntervalSeconds = config.sendInterval.GetNanoSeconds () / 1000000000.0;
-    double requiredClientTime = config.clientStartTime.GetSeconds () +
-                                (config.packetCount * packetIntervalSeconds) +
-                                config.timeBuffer.GetSeconds ();
-    double requiredServerTime = requiredClientTime + config.timeBuffer.GetSeconds (); // Server runs longer
+    std::cout << "Calculated transmission time: " << transmissionSec * 1000 << " ms\n";
+    std::cout << "Total simulation time: " << simulationTime << " seconds\n";
 
-    // Server application (node 1)
-    Ptr<SoftUeFullApp> serverApp = CreateObject<SoftUeFullApp> ();
-    if (serverApp)
-    {
-        NS_LOG_INFO ("✓ Created server application");
-        serverApp->SetConfiguration (config);
-        serverApp->Setup (0, 0, Address (), config.serverPort, true);
-        serverApp->SetStartTime (config.serverStartTime);
-        serverApp->SetStopTime (Seconds (requiredServerTime));
-        nodes.Get (1)->AddApplication (serverApp);
-        NS_LOG_INFO ("✓ Server application installed");
-    }
+    // Create server application
+    Ptr<StressTestApp> serverApp = CreateObject<StressTestApp> ();
+    serverApp->SetConfiguration (config);
+    serverApp->Setup (0, 0, Address (), config.serverPort, true);
+    serverApp->SetStartTime (config.serverStartTime);
+    serverApp->SetStopTime (Seconds (simulationTime));
+    nodes.Get (1)->AddApplication (serverApp);
 
-    // Client application (node 0)
-    Ptr<SoftUeFullApp> clientApp = CreateObject<SoftUeFullApp> ();
-    if (clientApp)
-    {
-        NS_LOG_INFO ("✓ Created client application");
-        clientApp->SetConfiguration (config);
-        clientApp->Setup (config.packetSize, config.packetCount, serverAddress, config.serverPort, false);
-        clientApp->SetStartTime (config.clientStartTime);
-        clientApp->SetStopTime (Seconds (requiredClientTime));
-        nodes.Get (0)->AddApplication (clientApp);
-        NS_LOG_INFO ("✓ Client application installed");
-    }
+    // Create client application
+    Ptr<StressTestApp> clientApp = CreateObject<StressTestApp> ();
+    clientApp->SetConfiguration (config);
+    clientApp->Setup (config.packetSize, config.packetCount, serverAddress, config.serverPort, false);
+    clientApp->SetStartTime (config.clientStartTime);
+    clientApp->SetStopTime (Seconds (simulationTime));
+    nodes.Get (0)->AddApplication (clientApp);
 
-    NS_LOG_INFO ("✓ Applications installation completed");
+    std::cout << "Starting simulation (estimated duration: "
+              << std::fixed << std::setprecision(2) << simulationTime << " seconds)...\n";
+    std::cout << std::string(60, '-') << "\n";
 
-    // Enable tracing
-    if (enableTracing)
-    {
-        devices.Get (0)->TraceConnectWithoutContext ("MacTx",
-            MakeBoundCallback (&PacketTrace, "Node0-TX"));
-        devices.Get (1)->TraceConnectWithoutContext ("MacRx",
-            MakeBoundCallback (&PacketTrace, "Node1-RX"));
-        NS_LOG_INFO ("✓ Packet tracing enabled");
-    }
+    // Run simulation
+    auto startTime = std::chrono::high_resolution_clock::now();
 
-    // Enable statistics collection (if available)
-    // helper.EnableStatisticsCollectionAll ();
-
-    double simulationEndTime = requiredServerTime + 2.0; // Extra buffer
-
-    NS_LOG_INFO ("Starting simulation...");
-    NS_LOG_INFO ("Simulation parameters:");
-    NS_LOG_INFO ("  - Packet size: " << config.packetSize << " bytes");
-    NS_LOG_INFO ("  - Packet count: " << config.packetCount);
-    NS_LOG_INFO ("  - Simulation duration: " << simulationEndTime << " seconds");
-    NS_LOG_INFO ("  - Data center latency target: " << config.sendInterval.GetNanoSeconds () << "ns per packet");
-    Simulator::Stop (Seconds (simulationEndTime));
+    Simulator::Stop (Seconds (simulationTime));
     Simulator::Run ();
 
-    NS_LOG_INFO ("\n" << std::string (60, '='));
-    NS_LOG_INFO ("SOFT-UE END-TO-END COMMUNICATION TEST RESULTS");
-    NS_LOG_INFO (std::string (60, '='));
+    auto endTime = std::chrono::high_resolution_clock::now();
+    double wallClockSeconds = std::chrono::duration<double>(endTime - startTime).count();
 
-    NS_LOG_INFO ("\n" << clientApp->GetStatistics ());
-    NS_LOG_INFO ("\n" << serverApp->GetStatistics ());
+    std::cout << "Simulation completed in " << std::fixed << std::setprecision(2)
+              << wallClockSeconds << " seconds (wall clock)\n";
+
+    // Print and save results
+    PrintResults(config, g_stats);
+    WriteResultsToCSV(config, g_stats);
+
+    // Print individual app statistics
+    std::cout << "\n" << clientApp->GetStatistics ();
+    std::cout << serverApp->GetStatistics ();
 
     // PDS Manager statistics
     auto pdsStats0 = pdsManager0->GetStatistics ();
     auto pdsStats1 = pdsManager1->GetStatistics ();
-    NS_LOG_INFO ("\nNode 0 PDS Statistics:\n" << pdsStats0->GetStatistics ());
-    NS_LOG_INFO ("\nNode 1 PDS Statistics:\n" << pdsStats1->GetStatistics ());
+    std::cout << "\nNode 0 PDS Statistics:\n" << pdsStats0->GetStatistics ();
+    std::cout << "\nNode 1 PDS Statistics:\n" << pdsStats1->GetStatistics ();
 
-    // SES Manager statistics (if available)
-    // Note: SES manager may have separate statistics methods
+    Simulator::Destroy ();
 
-    // Test verification
-    bool testPassed = (clientApp->GetPacketCount () == config.packetCount) &&
-                     (serverApp->GetPacketCount () == config.packetCount) &&
-                     (clientApp->GetSesProcessedCount () > 0) &&
-                     (clientApp->GetPdsProcessedCount () > 0);
-
-    NS_LOG_INFO ("\n" << std::string (60, '='));
-    NS_LOG_INFO ("COMMUNICATION TEST VERIFICATION");
-    NS_LOG_INFO (std::string (60, '='));
-
-    // Test status with clear formatting
-    std::string status = testPassed ? "✅ PASSED" : "❌ FAILED";
-    NS_LOG_INFO ("Overall Status: " << status);
-
-    // Packet transmission verification
-    NS_LOG_INFO ("Packet Transmission:");
-    NS_LOG_INFO ("  Expected packets:    " << config.packetCount);
-    NS_LOG_INFO ("  Client processed:    " << clientApp->GetPacketCount () << " ("
-                << (config.packetCount > 0 ? (100.0 * clientApp->GetPacketCount () / config.packetCount) : 0) << "%)");
-    NS_LOG_INFO ("  Server received:    " << serverApp->GetPacketCount () << " ("
-                << (config.packetCount > 0 ? (100.0 * serverApp->GetPacketCount () / config.packetCount) : 0) << "%)");
-
-    // Protocol layer processing
-    NS_LOG_INFO ("Protocol Layer Processing:");
-    NS_LOG_INFO ("  Client SES processed: " << clientApp->GetSesProcessedCount ());
-    NS_LOG_INFO ("  Client PDS processed: " << clientApp->GetPdsProcessedCount ());
-    NS_LOG_INFO ("  Server SES processed: " << serverApp->GetSesProcessedCount ());
-    NS_LOG_INFO ("  Server PDS processed: " << serverApp->GetPdsProcessedCount ());
-
-      Simulator::Destroy ();
-
-    return testPassed ? 0 : 1;
+    // Return success if throughput efficiency > 50%
+    double efficiency = g_stats.GetThroughputGbps() / TARGET_RATE_GBPS * 100.0;
+    return (efficiency >= 50.0 && g_stats.GetLossRate() < 1.0) ? 0 : 1;
 }

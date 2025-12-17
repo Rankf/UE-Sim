@@ -1,0 +1,18 @@
+Metric,Value,Unit
+Target Rate,200,Gbps
+Achieved Throughput,200.994,Gbps
+Efficiency,100.50,%
+Total Packets Sent,100000,packets
+Total Packets Received,100000,packets
+Packet Loss Rate,0.0000,%
+Total Bytes Sent,140700000,bytes
+Total Bytes Received,140700000,bytes
+Packet Rate,17856645,pps
+Average Latency,156.00,ns
+P50 Latency,156.00,ns
+P99 Latency,156.00,ns
+Min Latency,156.00,ns
+Max Latency,156.00,ns
+Jitter,0.00,ns
+SES Processed,100000,operations
+PDS Processed,100000,operations
