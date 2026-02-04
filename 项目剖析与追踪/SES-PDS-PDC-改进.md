@@ -123,4 +123,4 @@
 | Eager size / Pause | DispatchPacket 内 NotifyEagerSize(1372)、NotifyPause(true/false) | 日志 `[Control] Eager size (placeholder)`、`Pause (placeholder)` |
 | Rx req/Rx rsp | ProcessReceiveRequest 内占位日志 | 日志 `[Control] Rx req/Rx rsp (placeholder)` |
 
-**剩余差异验收**：运行 `./ns3 run uec-e2e-concepts -- --packetCount=25` 及 `--largeTransactionSize=4000 --packetCount=2` 无崩溃；收发包一致；控制面占位日志齐全。回归命令：`./ns3 build`，`./ns3 run uec-e2e-concepts -- --packetCount=20`。
+**剩余差异验收**：运行 `./ns3 run uec-e2e-concepts --transactionSize=4000 --packetCount=2` 无崩溃；收发包一致；控制面占位日志齐全。

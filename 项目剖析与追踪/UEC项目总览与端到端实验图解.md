@@ -1,10 +1,55 @@
-# UEC 端到端概念实验与图解
+# UEC 项目总览与端到端实验图解
 
-本文档提供覆盖 **Ultra Ethernet Consortium (UEC)** 所有关键概念的端到端实验说明，并辅以详细图解，便于理解 Soft-UE ns-3 项目。
+本文档整合项目架构与 UEC 端到端实验说明，覆盖 **Ultra Ethernet Consortium (UEC)** 所有关键概念。
 
 ---
 
-## 一、UEC 关键概念速查表
+## 目录
+
+1. [项目本质](#一项目本质)
+2. [UEC 关键概念速查表](#二uec-关键概念速查表)
+3. [Ultra Ethernet 三层协议栈架构](#三ultra-ethernet-三层协议栈架构)
+4. [目录结构映射](#四目录结构映射)
+5. [协议栈与数据流总览](#五协议栈与数据流总览)
+6. [各层概念图解](#六各层概念图解)
+   - 6.1 FEP（Fabric Endpoint）
+   - 6.2 SES（语义子层）
+   - 6.3 PDS（包分发子层）
+   - 6.4 PDC（IPDC vs TPDC）
+   - 6.5 MSN 与 SOM/EOM
+   - 6.6 RTO（重传超时）
+7. [端到端实验说明](#七端到端实验说明)
+   - 7.1 运行方式
+   - 7.2 端到端流程关键日志
+   - 7.3 单包生命周期详解
+   - 7.4 实验覆盖的概念与阶段
+8. [与 UEC 参考图对照及欠缺点](#八与-uec-参考图对照及欠缺点)
+9. [小结](#九小结)
+
+---
+
+## 一、项目本质
+
+**一句话概括**: 将原型系统 `/home/makai/Soft-UE` 中的 Ultra Ethernet 协议栈完整迁移到 ns-3 离散事件仿真器中，使其能够进行大规模网络性能仿真。
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          项目迁移关系                                    │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   /home/makai/Soft-UE (原型)          /home/makai/Soft-UE-ns3 (仿真)    │
+│   ┌─────────────────────┐             ┌─────────────────────┐          │
+│   │  Ultra Ethernet     │   迁移到    │  Ultra Ethernet     │          │
+│   │  协议栈实现          │ ─────────▶ │  + ns-3 集成        │          │
+│   │  (独立运行)          │             │  (仿真环境)          │          │
+│   └─────────────────────┘             └─────────────────────┘          │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 二、UEC 关键概念速查表
 
 | 缩写 | 全称 | 中文 | 作用 |
 |------|------|------|------|
@@ -20,14 +65,124 @@
 
 ---
 
-## 二、协议栈与数据流总览
+## 三、Ultra Ethernet 三层协议栈架构
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        Ultra Ethernet 协议栈                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                    应用层 (Application)                          │   │
+│  │                    SoftUeFullApp / 用户脚本                      │   │
+│  └────────────────────────────┬────────────────────────────────────┘   │
+│                               │                                         │
+│                               ▼                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │               SES 层 (Semantic Sub-layer)                        │   │
+│  │  ┌─────────────┐  ┌──────────────┐  ┌────────────────────┐      │   │
+│  │  │ SesManager  │  │  MSN Table   │  │ OperationMetadata  │      │   │
+│  │  │ 语义处理     │  │ 消息序列号    │  │ 操作元数据          │      │   │
+│  │  └─────────────┘  └──────────────┘  └────────────────────┘      │   │
+│  │  功能: 操作类型识别、端点寻址、授权验证、元数据管理               │   │
+│  └────────────────────────────┬────────────────────────────────────┘   │
+│                               │                                         │
+│                               ▼                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │               PDS 层 (Packet Delivery Sub-layer)                 │   │
+│  │  ┌─────────────┐  ┌──────────────┐  ┌────────────────────┐      │   │
+│  │  │ PdsManager  │  │  PdsHeader   │  │  PdsStatistics     │      │   │
+│  │  │ 包分发管理   │  │ 协议头处理    │  │ 性能统计           │      │   │
+│  │  └─────────────┘  └──────────────┘  └────────────────────┘      │   │
+│  │  功能: 包分类路由、PDC管理分配、拥塞控制、流量管理                │   │
+│  └────────────────────────────┬────────────────────────────────────┘   │
+│                               │                                         │
+│                               ▼                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │               PDC 层 (Packet Delivery Context)                   │   │
+│  │  ┌─────────────┐  ┌──────────────┐  ┌────────────────────┐      │   │
+│  │  │   PdcBase   │  │    IPDC      │  │      TPDC          │      │   │
+│  │  │   基类      │  │  不可靠传输   │  │   可靠传输         │      │   │
+│  │  └─────────────┘  └──────────────┘  └────────────────────┘      │   │
+│  │                          ┌────────────────┐                      │   │
+│  │                          │   RtoTimer     │                      │   │
+│  │                          │  超时重传计时器 │                      │   │
+│  │                          └────────────────┘                      │   │
+│  │  功能: 传输上下文管理、可靠/不可靠传输、超时重传                  │   │
+│  └────────────────────────────┬────────────────────────────────────┘   │
+│                               │                                         │
+│                               ▼                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │               ns-3 网络层 (Network Layer)                        │   │
+│  │  ┌─────────────────────┐       ┌─────────────────────┐          │   │
+│  │  │  SoftUeNetDevice    │◄─────►│   SoftUeChannel     │          │   │
+│  │  │  Soft-UE网络设备     │       │   Soft-UE通道       │          │   │
+│  │  └─────────────────────┘       └─────────────────────┘          │   │
+│  │  功能: ns-3集成、设备管理、通道传输、延迟模拟                    │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 四、目录结构映射
+
+```
+/home/makai/Soft-UE-ns3/
+│
+├── src/soft-ue/                      # 核心模块
+│   ├── model/
+│   │   ├── ses/                      # SES层实现
+│   │   │   ├── ses-manager.h/cc      # 语义层管理器
+│   │   │   ├── operation-metadata.h  # 操作元数据
+│   │   │   └── msn-entry.h           # 消息序列号表
+│   │   │
+│   │   ├── pds/                      # PDS层实现
+│   │   │   ├── pds-manager.h/cc      # 包分发管理器
+│   │   │   ├── pds-header.cc         # 协议头
+│   │   │   └── pds-statistics.cc     # 统计功能
+│   │   │
+│   │   ├── pdc/                      # PDC层实现
+│   │   │   ├── pdc-base.h/cc         # PDC基类
+│   │   │   ├── ipdc.h/cc             # 不可靠PDC
+│   │   │   ├── tpdc.h/cc             # 可靠PDC
+│   │   │   └── rto-timer/            # 超时计时器
+│   │   │
+│   │   ├── network/                  # ns-3网络集成
+│   │   │   ├── soft-ue-net-device.h/cc
+│   │   │   └── soft-ue-channel.h/cc
+│   │   │
+│   │   └── common/                   # 通用组件
+│   │       └── transport-layer.h
+│   │
+│   ├── helper/                       # Helper层
+│   │   └── soft-ue-helper.h/cc       # 用户友好配置接口
+│   │
+│   └── test/                         # 单元测试
+│
+├── scratch/
+│   ├── Soft-UE/Soft-UE.cc            # 主测试脚本 (200Gbps压力测试)
+│   └── Soft-UE-E2E-Concepts/         # 端到端概念实验
+│       └── uec-e2e-concepts.cc
+│
+├── build/lib/
+│   └── libns3.44-soft-ue.so          # 编译产物
+│
+└── docs/                             # 文档
+    └── evidence/performance/         # 测试结果
+```
+
+---
+
+## 五、协议栈与数据流总览
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                     UEC 端到端数据流（单包视角）                              │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  发送端 (Node 0, FEP=1)                        接收端 (Node 1, FEP=2)       │
+│  发送端 (Node 0, FEP=4)                        接收端 (Node 1, FEP=8)       │
 │                                                                             │
 │  ┌──────────────────┐                        ┌──────────────────┐         │
 │  │ ① 应用层          │                        │ ⑧ 应用层          │         │
@@ -52,7 +207,7 @@
 │           ▼                                          │                     │
 │  ┌──────────────────┐     SoftUeChannel     ┌───────┴─────────┐         │
 │  │ SoftUeNetDevice  │ ────────────────────▶ │ SoftUeNetDevice  │         │
-│  │ (FEP=1)          │     (延迟/带宽)        │ (FEP=2)          │         │
+│  │ (FEP=4)          │     (延迟/带宽)        │ (FEP=8)          │         │
 │  └──────────────────┘                        └──────────────────┘         │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -60,9 +215,9 @@
 
 ---
 
-## 三、各层概念图解
+## 六、各层概念图解
 
-### 3.1 FEP（Fabric Endpoint）— 谁和谁通信
+### 6.1 FEP（Fabric Endpoint）— 谁和谁通信
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -70,21 +225,20 @@
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │   Node 0                     SoftUeChannel                  Node 1      │
-│   ┌─────────────┐                                              ┌───────┴─────┐
-│   │ SoftUe      │   FEP 由 Helper 在 Install 时分配：           │ SoftUe      │
-│   │ NetDevice   │   config.localFep = (MAC 低 16 位) 或 i+1     │ NetDevice   │
-│   │ FEP = 1     │ ────────────────────────────────────────────▶ │ FEP = 2     │
-│   └─────────────┘   寻址：目标 FEP=2 决定包被哪个设备接收       └─────────────┘
+│   ┌─────────────┐                                       ┌─────────────┐ │
+│   │ SoftUe      │   FEP 由 Helper 在 Install 时分配：    │ SoftUe      │ │
+│   │ NetDevice   │   config.localFep = (MAC 低 16 位)     │ NetDevice   │ │
+│   │ FEP = 4     │ ─────────────────────────────────────▶ │ FEP = 8     │ │
+│   └─────────────┘   寻址：目标 FEP=8 决定包被哪个设备接收 └─────────────┘ │
 │                                                                         │
 │   OperationMetadata 中：                                                │
 │   • SetSourceEndpoint(nodeId, endpointId)  → 源 FEP 侧信息              │
 │   • SetDestinationEndpoint(nodeId, endpointId) → 目标 FEP 侧信息        │
-│   实际路由用 nodeId 映射到设备 FEP（如 node 0 → FEP 1, node 1 → FEP 2）  │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 SES（语义子层）— 操作类型与元数据
+### 6.2 SES（语义子层）— 操作类型与元数据
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -100,7 +254,6 @@
 │   │  job_id         │ 作业 ID（多任务隔离）                           │   │
 │   │  messages_id    │ 消息 ID（对应 MSN，用于重组）                   │   │
 │   │  payload        │ start_addr, length, imm_data                    │   │
-│   │  use_optimized_header / has_imm_data                             │   │
 │   └─────────────────────────────────────────────────────────────────┘   │
 │                                    │                                    │
 │                                    ▼                                    │
@@ -114,7 +267,7 @@
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.3 PDS（包分发子层）— 包头与 PDC 选择
+### 6.3 PDS（包分发子层）— 包头与 PDC 选择
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -139,7 +292,7 @@
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.4 PDC（IPDC vs TPDC）— 可靠与不可靠
+### 6.4 PDC（IPDC vs TPDC）— 可靠与不可靠
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -156,20 +309,20 @@
 │   │ • 低延迟、可丢包             │  │ • 保证按序/可靠交付          │     │
 │   └─────────────────────────────┘  └─────────────────────────────┘     │
 │                                                                         │
-│   本项目中：压力测试多用 IPDC 段内 pdc_id（如 1..maxPdcCount）以追求速率； │
+│   本项目中：压力测试多用 IPDC 段内 pdc_id 以追求速率；                   │
 │   若需可靠语义，则分配 TPDC 并依赖 RTO 与重传逻辑。                      │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.5 MSN 与 SOM/EOM — 消息边界
+### 6.5 MSN 与 SOM/EOM — 消息边界
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        MSN 与 消息边界 (SOM/EOM)                         │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│   一条“消息”可能被拆成多个包：                                           │
+│   一条"消息"可能被拆成多个包：                                           │
 │                                                                         │
 │   Packet 0:  [PDSHeader: pdc_id=1, seq=1, SOM=1, EOM=0]  ← 消息开始     │
 │   Packet 1:  [PDSHeader: pdc_id=1, seq=2, SOM=0, EOM=0]                 │
@@ -182,7 +335,7 @@
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.6 RTO（重传超时）— 仅 TPDC
+### 6.6 RTO（重传超时）— 仅 TPDC
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -209,103 +362,81 @@
 
 ---
 
-## 四、端到端实验脚本说明
+## 七、端到端实验说明
 
-### 4.1 实验位置与运行方式
+### 7.1 运行方式
 
 | 项目 | 说明 |
 |------|------|
 | **脚本路径** | `scratch/Soft-UE-E2E-Concepts/uec-e2e-concepts.cc` |
-| **编译** | `./ns3 build`（与主项目一起编译） |
-| **运行** | `./ns3 run uec-e2e-concepts`（短名称匹配） |
-| **端到端流程日志** | 默认已开启，运行后可见所有 `[UEC-E2E]` 开头的关键节点日志（①②③… 对应下图解） |
-| **仅看 E2E 日志** | `grep UEC-E2E` 过滤，或关闭其他：`NS_LOG="UecE2EConcepts=info:SesManager=info:SoftUeNetDevice=info:SoftUeChannel=info" ./ns3 run uec-e2e-concepts` |
+| **编译** | `./ns3 build` |
+| **运行** | `./ns3 run uec-e2e-concepts` |
+| **带参数运行** | `./ns3 run uec-e2e-concepts -- --transactionSize=4000 --packetCount=2` |
 
-若出现 **`Couldn't find the specified program: uec-e2e-concepts`**，说明 ns3 的节目录未包含该可执行文件，需先重新配置再编译：
+若出现 `Couldn't find the specified program`，先重新配置：
 
 ```bash
 ./ns3 configure --enable-examples --enable-tests
 ./ns3 build
-./ns3 run uec-e2e-concepts
 ```
 
-或直接运行生成的可执行文件：
+### 7.2 端到端流程关键日志
 
-```bash
-./build/scratch/Soft-UE-E2E-Concepts/ns3.44-uec-e2e-concepts-debug
-```
-
-### 4.1.1 端到端流程关键日志（[UEC-E2E]）
-
-运行 `./ns3 run uec-e2e-concepts` 后，每个包会按顺序打印下列关键节点，便于对照「二、协议栈与数据流总览」理解全流程：
+运行实验后，每个包按顺序打印下列关键节点（`[UEC-E2E]` 开头）：
 
 | 步骤 | 日志前缀 | 含义 |
 |------|----------|------|
-| ① | `[App] ① 应用层 构造包` | 应用创建包、size、seq |
-| ② | `[App] ② PDS 头` | 填 pdc_id, seq, SOM, EOM |
-| ③ | `[App] ③ SES 元数据` | 填 src/dst、job_id、messages_id |
-| ③ | `[SES] ③ SES 层 ProcessSendRequest` | SES 校验通过，允许发送 |
-| ④ | `[App] ④ 打时间戳 → device->Send()` | 打时间戳并交给设备 |
-| ⑤ | `[Device] ⑤ 设备层 Send` | 设备发往信道（FEP→FEP） |
-| ⑤ | `[Channel] ⑤ 信道 Transmit` | 信道转发（经延迟） |
-| ⑥ | `[Channel] ⑥ 信道 ReceivePacket` | 信道送达对端设备 |
-| ⑥ | `[Device] ⑥ 设备层 ReceivePacket` | 设备收包入队 |
-| ⑦ | `[Device] ⑦ 设备层 ProcessReceiveQueue` | 设备递交应用层 |
-| ⑧ | `[App] ⑧ 应用层 收包` | 应用 HandleRead 解析 PDS 头 |
+| ① | `[App] 事务 x/y size=...` | 应用创建事务 |
+| ② | `[Device] ⑤ 设备层 Send` | 设备交给 SES 处理 |
+| ③ | `[SES] 切包 第 x/y 片` | SES 按 MTU 切包 |
+| ④ | `[PDS] AllocatePdc` | PDS 分配 PDC |
+| ⑤ | `[PDC] TransmitPacket` | PDC 发送到信道 |
+| ⑤ | `[Channel] ⑤ 信道 Transmit` | 信道转发 |
+| ⑥ | `[Channel] ⑥ 信道 ReceivePacket` | 信道送达对端 |
+| ⑥ | `[Device] ⑥ 设备层 ReceivePacket` | 设备收包 |
+| ⑦ | `[PDS] ProcessReceivedPacket` | PDS 解析并分发 |
+| ⑦ | `[SES] ProcessReceiveRequest` | SES 处理接收 |
+| ⑧ | `[App] ⑧ 应用层 收包` | 应用 HandleRead |
 
-### 4.1.2 如何运行与查看
+### 7.3 单包生命周期详解
 
-- **直接运行（默认会打 E2E 日志）**
-  ```bash
-  ./ns3 run uec-e2e-concepts
-  ```
-
-- **只看端到端节点**
-  ```bash
-  ./ns3 run uec-e2e-concepts 2>&1 | grep UEC-E2E
-  ```
-
-- **只看第一个包的完整流程**
-  ```bash
-  ./ns3 run uec-e2e-concepts 2>&1 | grep -A 100 "seq=1 " | head -15
-  ```
-
-### 4.1.3 一个包的完整流程说明（对照日志理解）
-
-下面以 **第一个包（seq=1）** 为例，按时间顺序说明从“应用构造包”到“对端应用收包”的整条路径。每条对应你运行上述命令时看到的一行 `[UEC-E2E]` 日志。
-
----
+以 `--transactionSize=4000 --packetCount=2` 为例，4000 字节事务被切成 3 片（MTU=1500）：
 
 **发送端（Node 0，FEP=4）**
 
-| 步骤 | 日志示例 | 含义 |
-|------|----------|------|
-| **① 应用层 构造包** | `[App] ① 应用层 构造包 size=256 seq=1` | 应用创建空包（payload 256 字节），并决定这是第 1 个包（seq=1）。此时还没有任何协议头。 |
-| **② PDS 头** | `[App] ② PDS 头 pdc_id=1 seq=1 SOM=true EOM=false` | 应用按 UEC 规范填 **PDS 头**：选一条“通道”`pdc_id=1`（IPDC 段）、序号 `seq=1`、消息边界 `SOM=首包, EOM=非末包`。包从 256 变成 256+头长。 |
-| **③ SES 元数据** | `[App] ③ SES 元数据 src_node=1 dst_node=2 job_id=12345 messages_id=1` | 应用填 **语义层** 信息：谁发给谁（src_node=1, dst_node=2）、作业 ID、消息 ID（对应 MSN）。这些不放在包头上，而是交给 SES 做校验和后续处理。 |
-| **③ SES 校验** | `[SES] ③ SES 层 ProcessSendRequest: ... → 校验通过，允许发送` | **SES 层** 根据元数据做端点/权限等校验，通过后允许本包继续往下发。 |
-| **④ 打时间戳** | `[App] ④ 打时间戳 → 调用 device->Send()` | 应用在包上打 **发送时间戳**（供对端算延迟），然后调用 **device->Send()** 把包交给本节点的网络设备。 |
-| **⑤ 设备发往信道** | `[Device] ⑤ 设备层 Send: FEP 4 → FEP 8 size=263 B` | **SoftUeNetDevice** 根据目标地址解析出目标 FEP=8，把包交给 **SoftUeChannel**（信道）。263 B = 256 负载 + PDS 头等。 |
-| **⑤ 信道转发** | `[Channel] ⑤ 信道 Transmit: FEP 4 → FEP 8 size=263 B (经延迟后送达对端)` | **信道** 收到包后，按配置的 **延迟 + 传输时间** 在仿真里安排“在将来某时刻送达 FEP=8 所在设备”。 |
-
----
+| 步骤 | 说明 |
+|------|------|
+| **① 应用层构造事务** | 创建 4000 字节事务 |
+| **② 设备交给 SES** | device->Send() 触发 SES ProcessSendRequest |
+| **③ SES 切包** | 按 MTU 切成 3 片：1334 + 1334 + 1332 字节 |
+| **④ PDS 分配 PDC** | 每片分配独立 pdc_id（1, 2, 3） |
+| **⑤ PDC 发送到信道** | 经 PDC TransmitPacket 到 Channel |
 
 **接收端（Node 1，FEP=8）**
 
-| 步骤 | 日志示例 | 含义 |
-|------|----------|------|
-| **⑥ 信道送达设备** | `[Channel] ⑥ 信道 ReceivePacket: FEP 4 → FEP 8 送达设备，设备即将 ReceivePacket` | 仿真时间到达后，信道触发“包到达 FEP=8 的设备”，即调用对端 **SoftUeNetDevice::ReceivePacket**。 |
-| **⑥ 设备收包入队** | `[Device] ⑥ 设备层 ReceivePacket: FEP 4 → FEP 8 size=263 B → 入队，待递交应用层` | 设备确认包是发给本机 FEP 的，更新统计（含用时间戳算延迟），把包放入 **接收队列**，等待交给上层。 |
-| **⑦ 设备递交应用** | `[Device] ⑦ 设备层 ProcessReceiveQueue: 递交应用层 HandleRead` | 设备从队列里取出包，调用应用注册的 **接收回调**，即应用层的 **HandleRead**。 |
-| **⑧ 应用层收包** | `[App] ⑧ 应用层 收包 seq=1 pdc_id=1 size=263 (累计接收 1 包)` | 应用在 **HandleRead** 里解析 **PDS 头**（得到 seq=1, pdc_id=1），做统计或业务处理。至此“一个包”的端到端流程结束。 |
+| 步骤 | 说明 |
+|------|------|
+| **⑥ 信道送达设备** | Channel 触发 ReceivePacket |
+| **⑦ PDS 解析/SES 处理** | 按 pdc_id 分发，经 SES 交付 |
+| **⑧ 应用层收包** | HandleRead 解析 PDS 头并统计 |
 
----
+**实际运行日志片段**：
 
-**小结（一句话串起来）**
+```
+[UEC-E2E] [App] 事务 1/2 size=4000 B → device->Send()
+[UEC-E2E] 大包 1/2 开始（切包） 事务 4000 bytes → 3 片 (MTU=1500)
+[UEC-E2E] [PDS] PDS Manager AllocatePdc pdc_id=1 → SendPacketThroughPdc
+[UEC-E2E] [PDC] PDC pdc_id=1 TransmitPacket → TransmitToChannel
+[UEC-E2E] [Channel] ⑤ 信道 Transmit: FEP 4 → FEP 8 size=1341 B
+[UEC-E2E] [SES] 切包 第 1/3 片: len=1334 SOM=true EOM=false
+...
+[UEC-E2E] [Channel] ⑥ 信道 ReceivePacket: FEP 4 → FEP 8 送达设备
+[UEC-E2E] [PDS] ProcessReceivedPacket 解析 pdc_id=3 按 pdc_id 分发
+[UEC-E2E] [SES] ProcessReceiveRequest pdc_id=3 → DeliverReceivedPacket
+[UEC-E2E] [App] ⑧ 应用层 收包 seq=0 pdc_id=0 size=1332 (累计接收 1 包)
+```
 
-一个包从 **应用构造（①）→ 填 PDS 头（②）→ 填 SES 元数据并经 SES 校验（③）→ 打时间戳并交给设备（④）→ 设备发往信道（⑤）→ 信道经延迟后送达对端设备（⑥）→ 对端设备入队并递交应用（⑦）→ 对端应用 HandleRead 解析 PDS 头（⑧）**。FEP 用来在信道/设备层区分“发给谁”（FEP=8 即 Node 1）；PDS 头里的 pdc_id/seq/SOM/EOM 用来在做多包、多流时区分通道和消息边界。
-
-### 4.2 实验覆盖的概念与顺序
+### 7.4 实验覆盖的概念与阶段
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -314,101 +445,72 @@
 │                                                                         │
 │  Phase 0: 拓扑与 FEP                                                    │
 │  • 创建 2 节点，SoftUeHelper::Install → 每节点 SoftUeNetDevice          │
-│  • 打印各节点 FEP（Fabric Endpoint），理解“端点”是谁                      │
+│  • 打印各节点 FEP（Fabric Endpoint）                                     │
 │                                                                         │
 │  Phase 1: SES — OperationMetadata 与 ProcessSendRequest                  │
-│  • 构造 ExtendedOperationMetadata（OpType::SEND, job_id, messages_id,   │
-│    SetSourceEndpoint / SetDestinationEndpoint）                          │
+│  • 构造 ExtendedOperationMetadata（OpType::SEND, job_id, messages_id）  │
 │  • 调用 SesManager::ProcessSendRequest，确认 SES 参与发送路径            │
 │                                                                         │
 │  Phase 2: PDS — PDSHeader 与 PDC 分配                                   │
-│  • 为每个包设置 PDSHeader：pdc_id（IPDC 段）、seq_num、SOM、EOM          │
+│  • 为每个包设置 PDSHeader：pdc_id、seq_num、SOM、EOM                    │
 │  • 理解 pdc_id 与 IPDC/TPDC 区间（1..512 vs 513..1024）                 │
 │                                                                         │
 │  Phase 3: 完整发送与接收                                                 │
-│  • 客户端按间隔发送 N 个包，服务端 ReceiveCallback 收包                  │
+│  • 客户端按间隔发送 N 个事务，服务端 ReceiveCallback 收包                  │
 │  • 收包后解析 PDSHeader，统计 SES/PDS 处理次数与延迟                     │
 │                                                                         │
 │  Phase 4: 概念清单与统计                                                │
-│  • 打印“本实验覆盖的 UEC 概念”清单（FEP, SES, PDS, PDC, IPDC, TPDC,      │
-│    MSN, SOM/EOM, RTO）                                                   │
+│  • 打印本实验覆盖的 UEC 概念清单                                          │
 │  • 输出 PdsStatistics、收发包数、吞吐与延迟                             │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 4.3 与主压力测试的对比
+**与主压力测试对比**：
 
 | 对比项 | scratch/Soft-UE/Soft-UE.cc | scratch/Soft-UE-E2E-Concepts/uec-e2e-concepts.cc |
 |--------|----------------------------|--------------------------------------------------|
-| 目标 | 200Gbps 压力与性能统计 | 理解 UEC 概念、覆盖全栈与图解对应 |
-| 包数量 | 10 万级 | 少量（如 20）便于观察 |
-| 输出 | CSV、延迟分布、吞吐 | 分阶段打印 FEP/SES/PDS/PDC 与概念清单 |
-| 图解 | 无 | 与本文档 07 图解一一对应 |
+| 目标 | 200Gbps 压力与性能统计 | 理解 UEC 概念、覆盖全栈 |
+| 包数量 | 10 万级 | 少量（如 2-20）便于观察 |
+| 输出 | CSV、延迟分布、吞吐 | 分阶段打印 FEP/SES/PDS/PDC |
 
 ---
 
-## 五、单包生命周期（与图解对应）
+## 八、与 UEC 参考图对照及欠缺点
 
+### 8.1 Core Components 图期望的交互
+
+- **SES（左）→ PDS Manager**：控制面 Tx req、Eager req
+- **PDS Manager → PDCs**：管理 Tx req、Rx req、Rx rsp、Close
+- **数据路径**：数据经 PDC（AllocatePdc + SendPacketThroughPdc）
+- **SES（左）← PDC**：Tx rsp
+
+### 8.2 当前实现状态
+
+| 功能点 | 图中期望 | 当前代码 |
+|--------|----------|----------|
+| **SES → PDS 提交 Tx req** | SES 发 Tx req 给 PDS Manager | ✅ 已实现：ProcessSendRequest 调用 PdsManager |
+| **数据经 PDC 发送** | AllocatePdc + SendPacketThroughPdc | ✅ 已实现：日志显示 `AllocatePdc pdc_id=x → SendPacketThroughPdc` |
+| **接收路径经 PDS/PDC** | 收包经 PdsManager 分发 | ✅ 已实现：`ProcessReceivedPacket 解析 pdc_id 按 pdc_id 分发` |
+| **控制面信令** | Tx rsp、Pause、Eager size | ⚠️ Placeholder：日志显示 `(placeholder)` |
+
+### 8.3 改进方向
+
+- **控制面**：Tx rsp、Eager size、Pause 等信令目前为 placeholder，后续可增加完整实现
+- **TPDC 重传**：RTO 机制框架已有，可进一步完善 ACK/NACK 处理
+
+---
+
+## 九、小结
+
+1. **项目定位**：将 Ultra Ethernet 协议栈迁移到 ns-3 进行大规模仿真
+2. **协议栈分层**：应用层 → SES → PDS → PDC → ns-3 网络层
+3. **核心概念**：FEP（端点标识）、SES（语义处理）、PDS（包分发）、PDC（传输上下文）、IPDC/TPDC（不可靠/可靠）、MSN（序列号）、RTO（重传）
+4. **端到端实验**：`./ns3 run uec-e2e-concepts` 覆盖全栈概念，可对照本文档图解理解
+5. **数据路径**：已实现经 PDC 发送/接收的完整路径
+
+运行以下命令体验端到端流程：
+
+```bash
+./ns3 run uec-e2e-concepts -- --transactionSize=4000 --packetCount=2
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    单包生命周期（与第二节图解对应）                       │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ① 应用层：Create<Packet>, 决定大小与数量                               │
-│  ② 应用层：构造 ExtendedOperationMetadata（FEP、OpType、job_id、        │
-│            messages_id）→ 对应 §3.1 FEP、§3.2 SES                        │
-│  ③ SES：  ProcessSendRequest(metadata) → §3.2                           │
-│  ④ 应用层：添加 PDSHeader(pdc_id, seq_num, SOM, EOM) → §3.3 PDS         │
-│  ⑤ PDS：  设备 Send 时按 pdc_id 走对应 PDC（IPDC/TPDC）→ §3.4          │
-│  ⑥ 接收端：SoftUeNetDevice 收包 → PDS 解析头 → 投递到应用                │
-│  ⑦ 接收端：SES 侧可更新 MSN/乱序重组 → §3.5                             │
-│  ⑧ 应用层：HandleRead 解析 PDSHeader，统计延迟与计数                     │
-│                                                                         │
-│  若使用 TPDC：发送后未收到 ACK 会由 RtoTimer 触发重传 → §3.6            │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 六、与 UEC 参考图对照及欠缺点（基于代码）
-
-**说明**：UEC 分层图（Initiator/Target）中的 **虚线表示逻辑路径**（如 Transactions、Messages、UET Packets），不是物理线缆路径；物理传输在 MAC 层（图中实线）。下面对照 **Core Components 图（SES–PDS Manager–PDC）** 与当前代码，逐条列出欠缺点。
-
-### 6.1 Core Components 图期望的交互（简述）
-
-- **SES（左）→ PDS Manager**：控制面 Tx req、Eager req（发送请求）
-- **PDS Manager → PDCs**：管理/控制 Tx req、Rx req、Rx rsp、Rx cm、Close
-- **数据路径**：数据应**水平穿过 PDC**（左接口 → PDC → 右接口），即由 PDS Manager 分配 PDC，经 **SendPacketThroughPdc** 发/收
-- **SES（左）← PDC**：数据/状态面 Tx rsp（发送响应）
-- **SES（右）↔ PDS Manager**：Rx req、Rx rsp、Rx cm、Tx nack 等
-- **PDC → SES（右）**：Tx req、Tx rsp、Tx cm（收端经 PDC 上报）
-
-### 6.2 基于代码的欠缺点分析
-
-| 欠缺点 | 图中期望 | 当前代码 | 代码位置 |
-|--------|----------|----------|----------|
-| **1. SES 未向 PDS Manager 提交 Tx req** | SES 发 Tx req（发送请求）给 PDS Manager | SesManager::ProcessSendRequest 里**构造了 SesPdsRequest**（等价于 Tx req），但**没有调用** m_pdsManager->ProcessSesRequest(sesRequest) 或 DispatchPacket(sesRequest)；注释写 "packet is sent directly by application through device->Send(), so we don't need to create PDS requests" | ses-manager.cc 约 159–189 行 |
-| **2. 数据未经过 PDC 发送** | 数据应经 PDC（PDS Manager 分配 PDC 后 SendPacketThroughPdc） | SoftUeNetDevice::Send 直接 **channel->Transmit**，未调用 PdsManager::ProcessSesRequest 或 SendPacketThroughPdc；应用只把 pdc_id 写在 PDS 头里，由设备直发 | soft-ue-net-device.cc 约 305–316 行（"Send directly through channel (bypass PDS manager for now)"） |
-| **3. PDS Manager 的 ProcessSesRequest 也未经 PDC** | PDS Manager 收到请求后应经 PDC 发（AllocatePdc + SendPacketThroughPdc） | PdsManager::ProcessSesRequest 收到 SesPdsRequest 后**直接** channel->Transmit(request.packet, ...)，**没有**调用 AllocatePdc 或 SendPacketThroughPdc；真正“经 PDC 发”的路径是 **DispatchPacket**（AllocatePdc + SendPacketThroughPdc），但 E2E 中无人调用 DispatchPacket | pds-manager.cc ProcessSesRequest 约 174–184 行；DispatchPacket 约 447–472 行 |
-| **4. 接收路径未经过 PDS/PDC** | 对端收包应经 PDS Manager/PDC 再交给 SES（Rx req/Rx rsp 等） | 设备 ReceivePacket 后入队、ProcessReceiveQueue 直接调应用 HandleRead；**没有**调用 PdsManager::ProcessReceivedPacket，也没有“收包经 PDC 再交给 SES”的 ProcessReceiveRequest | soft-ue-net-device.cc ReceivePacket、ProcessReceiveQueue |
-| **5. 无 Tx rsp / Eager size / Pause / Error event 等控制面** | 图中 SES 从 PDS Manager 收 Eager size、Pause、Error event；从 PDC 收 Tx rsp | 当前发送是同步 device->Send()，无“经 PDC 发完后回调 SES”的 Tx rsp 或上述信令 | 无对应实现 |
-| **6. 无 Rx req / Rx rsp / Rx cm（接收侧 SES ↔ PDS Manager）** | 图中右端 SES 与 PDS Manager 有 Rx req、Rx rsp、Rx cm | 接收侧未走 PDS Manager，也未向 SES 发 ProcessReceiveRequest | 无对应实现 |
-
-### 6.3 小结与改进方向
-
-- **核心欠缺点**：**PDC 承载数据路径未走 PDC 发送**。即 PDC/IPDC/TPDC 概念和 pdc_id 在头里都有，但当前 E2E **未通过 AllocatePdc + SendPacketThroughPdc 分配 PDC 再发**，只是把 pdc_id 写在 PDS 头里由设备直发；接收侧也未经 PDS Manager/PDC。
-- **改进方向**（若要与 Core Components 图一致）：
-  1. **发送**：SES::ProcessSendRequest 在校验通过后，将 SesPdsRequest 交给 PdsManager（如 ProcessSesRequest 或 DispatchPacket）；PdsManager 应经 **AllocatePdc + SendPacketThroughPdc** 发，而不是直接 channel->Transmit。或设备 Send 时根据包/元数据调用 PdsManager::DispatchPacket / SendPacketThroughPdc，使数据路径经过 PDC。
-  2. **PdsManager::ProcessSesRequest**：若保留该接口，应改为内部调用 DispatchPacket（AllocatePdc + SendPacketThroughPdc），使“SES 请求”统一经 PDC 发出。
-  3. **接收**：设备收包后先交给 PdsManager::ProcessReceivedPacket，再由 PDS/PDC 层按 pdc_id 分发并视需要调用 SesManager::ProcessReceiveRequest，形成“经 PDC 收、再交 SES”的路径。
-  4. **控制面**：视需要增加 Tx rsp、Eager size、Pause、Error event、Rx req/Rx rsp 等信令的占位或简化实现。
-
----
-
-## 七、小结
-
-- **01-项目总览图解** 给出协议栈与目录映射；**本实验与图解** 把 UEC 的 FEP、SES、PDS、PDC、IPDC、TPDC、MSN、SOM/EOM、RTO 与真实代码路径、实验阶段对应起来。
-- 运行 `./ns3 run uec-e2e-concepts` 并对照本文档中的图解，可逐概念理解 Soft-UE ns-3 中的 UEC 实现。
-- **六** 中对照 Core Components 图给出了基于代码的欠缺点与改进方向，便于后续让数据路径真正经 PDC 收发。
