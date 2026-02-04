@@ -219,6 +219,9 @@ PdsManager::ProcessReceivedPacket (Ptr<Packet> packet, uint32_t sourceEndpoint, 
   packet->PeekHeader (pdsHeader);
   uint16_t pdcId = pdsHeader.GetPdcId ();
 
+  NS_LOG_INFO ("============================================================");
+  NS_LOG_INFO (" [UEC-E2E] [PDS] 收包处理");
+  NS_LOG_INFO ("============================================================");
   NS_LOG_INFO ("[UEC-E2E] [PDS] ProcessReceivedPacket 解析 pdc_id=" << pdcId
                << " 按 pdc_id 分发（收端 PDC）");
 
@@ -524,6 +527,9 @@ PdsManager::SendPacketThroughPdc (uint16_t pdcId, Ptr<Packet> packet, bool som, 
     return false;
   }
 
+  NS_LOG_INFO ("============================================================");
+  NS_LOG_INFO (" [UEC-E2E] [PDS] 经 PDC 发送");
+  NS_LOG_INFO ("============================================================");
   NS_LOG_INFO ("[UEC-E2E] [PDS] SendPacketThroughPdc pdc_id=" << pdcId << " → PDC 实例发送");
 
   // Send packet through PDC

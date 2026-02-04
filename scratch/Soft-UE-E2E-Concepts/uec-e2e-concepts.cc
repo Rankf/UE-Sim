@@ -209,6 +209,9 @@ ConceptsDemoApp::SendPacket ()
           return;
         }
       bigPacket->AddPacketTag (SoftUeTimingTag (Simulator::Now ()));
+      NS_LOG_INFO ("============================================================");
+      NS_LOG_INFO (" [UEC-E2E] 发送流程（大事务 → SES 切包）");
+      NS_LOG_INFO ("============================================================");
       NS_LOG_INFO ("[UEC-E2E] [App] ① 应用层 1 事务大消息 size=" << m_config.largeTransactionSize
                    << " B → device->Send()（SES 将按 MTU 拆成多包，SOM/EOM 见 [SES] 日志）");
       (void) device->Send (bigPacket, m_destination, 0x0800);
@@ -227,6 +230,9 @@ ConceptsDemoApp::SendPacket ()
   bool som = (m_packetsSent == 0);
   bool eom = (m_packetsSent == m_numPackets - 1);
 
+  NS_LOG_INFO ("============================================================");
+  NS_LOG_INFO (" [UEC-E2E] 发送流程（单包）");
+  NS_LOG_INFO ("============================================================");
   NS_LOG_INFO ("[UEC-E2E] [App] ① 应用层 构造包 size=" << m_packetSize << " seq=" << seq);
 
   // ---------- PDS 概念：PDSHeader (pdc_id, seq_num, SOM, EOM) ----------
@@ -282,6 +288,9 @@ ConceptsDemoApp::HandleRead (Ptr<NetDevice> device, Ptr<const Packet> packet,
   Ptr<Packet> copy = packet->Copy ();
   PDSHeader pdsHeader;
   copy->RemoveHeader (pdsHeader);
+  NS_LOG_INFO ("============================================================");
+  NS_LOG_INFO (" [UEC-E2E] 收包流程（应用层）");
+  NS_LOG_INFO ("============================================================");
   NS_LOG_INFO ("[UEC-E2E] [App] ⑧ 应用层 收包 seq=" << pdsHeader.GetSequenceNumber ()
                << " pdc_id=" << pdsHeader.GetPdcId () << " size=" << packet->GetSize ()
                << " (累计接收 " << m_packetsReceived << " 包)");

@@ -180,6 +180,11 @@ SesManager::ProcessSendRequest (Ptr<ExtendedOperationMetadata> metadata, Ptr<Pac
         if (fragment && nPackets > 1)
         {
             // Transaction → multiple packets: split by MTU and submit each via PDS
+            NS_LOG_INFO ("============================================================");
+            NS_LOG_INFO (" [UEC-E2E] [SES] 切包");
+            NS_LOG_INFO ("============================================================");
+            NS_LOG_INFO ("[UEC-E2E] [SES] 切包: 事务 " << payloadLen << " bytes → " << nPackets
+                         << " 片 (MTU=" << m_maxMtu << ")");
             SesPdsRequest baseRequest = InitializeSesHeader (metadata);
             uint32_t messageId = baseRequest.rod_context;
             uint32_t payloadPerPacket = (payloadLen + nPackets - 1) / nPackets;
@@ -206,10 +211,11 @@ SesManager::ProcessSendRequest (Ptr<ExtendedOperationMetadata> metadata, Ptr<Pac
                     return false;
                 }
                 m_totalPacketsGenerated++;
-                NS_LOG_INFO ("[UEC-E2E] [SES] 事务→多包: 包 " << (i + 1) << "/" << nPackets
-                             << " SOM=" << request.som << " EOM=" << request.eom << " len=" << fragLen);
+                NS_LOG_INFO ("[UEC-E2E] [SES] 切包 第 " << (i + 1) << "/" << nPackets << " 片: len="
+                             << fragLen << " SOM=" << request.som << " EOM=" << request.eom);
             }
             NS_LOG_INFO ("[UEC-E2E] [SES] ③ SES 层 ProcessSendRequest: 1 事务 → " << nPackets << " 包");
+            NS_LOG_INFO ("============================================================");
         }
         else
         {
