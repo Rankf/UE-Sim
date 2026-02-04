@@ -210,6 +210,8 @@ ConceptsDemoApp::SendPacket ()
       return;
     }
   packet->AddPacketTag (SoftUeTimingTag (Simulator::Now ()));
+  if (m_numPackets > 1)
+    packet->AddPacketTag (SoftUeTransactionTag (k, n));
 
   bool success = device->Send (packet, m_destination, 0x0800);
   if (success)

@@ -407,6 +407,35 @@ private:
     uint32_t m_totalFragments; ///< Total number of fragments (小包 N)
 };
 
+/**
+ * @class SoftUeTransactionTag
+ * @brief ns-3 packet tag for transaction index (大包 k/N)
+ *
+ * Carried on each transaction/fragment so logs can show "大包 k/N" when multiple transactions.
+ */
+class SoftUeTransactionTag : public Tag
+{
+public:
+    static TypeId GetTypeId (void);
+    virtual TypeId GetInstanceTypeId (void) const override;
+    virtual uint32_t GetSerializedSize (void) const override;
+    virtual void Serialize (TagBuffer i) const override;
+    virtual void Deserialize (TagBuffer i) override;
+    virtual void Print (std::ostream &os) const override;
+
+    SoftUeTransactionTag ();
+    SoftUeTransactionTag (uint32_t transactionIndex, uint32_t totalTransactions);
+
+    uint32_t GetTransactionIndex (void) const;
+    void SetTransactionIndex (uint32_t index);
+    uint32_t GetTotalTransactions (void) const;
+    void SetTotalTransactions (uint32_t total);
+
+private:
+    uint32_t m_transactionIndex;   ///< 1-based index of this transaction (大包 k)
+    uint32_t m_totalTransactions; ///< Total number of transactions (大包 N)
+};
+
 } // namespace ns3
 
 #endif /* SOFT_UE_PACKET_TAG_H */

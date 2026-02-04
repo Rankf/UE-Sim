@@ -181,9 +181,20 @@ SesManager::ProcessSendRequest (Ptr<ExtendedOperationMetadata> metadata, Ptr<Pac
         if (fragment && nPackets > 1)
         {
             // Transaction → multiple packets: split by MTU and submit each via PDS
+            uint32_t txK = 0, txN = 0;
+            SoftUeTransactionTag txTag;
+            if (packet->PeekPacketTag (txTag))
+            {
+                txK = txTag.GetTransactionIndex ();
+                txN = txTag.GetTotalTransactions ();
+            }
             NS_LOG_INFO ("============================================================");
-            NS_LOG_INFO (" [UEC-E2E] 大包开始（切包） 事务 " << payloadLen << " bytes → " << nPackets
-                         << " 片 (MTU=" << m_maxMtu << ")");
+            if (txN > 0)
+                NS_LOG_INFO (" [UEC-E2E] 大包 " << txK << "/" << txN << " 开始（切包） 事务 " << payloadLen
+                             << " bytes → " << nPackets << " 片 (MTU=" << m_maxMtu << ")");
+            else
+                NS_LOG_INFO (" [UEC-E2E] 大包开始（切包） 事务 " << payloadLen << " bytes → " << nPackets
+                             << " 片 (MTU=" << m_maxMtu << ")");
             NS_LOG_INFO ("============================================================");
             SesPdsRequest baseRequest = InitializeSesHeader (metadata);
             uint32_t messageId = baseRequest.rod_context;
@@ -191,7 +202,10 @@ SesManager::ProcessSendRequest (Ptr<ExtendedOperationMetadata> metadata, Ptr<Pac
             for (uint32_t i = 0; i < nPackets; ++i)
             {
                 NS_LOG_INFO ("============================================================");
-                NS_LOG_INFO (" [UEC-E2E] 小包 " << (i + 1) << "/" << nPackets << " 全流程（发送）");
+                if (txN > 0)
+                    NS_LOG_INFO (" [UEC-E2E] 大包 " << txK << "/" << txN << " 小包 " << (i + 1) << "/" << nPackets << " 全流程（发送）");
+                else
+                    NS_LOG_INFO (" [UEC-E2E] 小包 " << (i + 1) << "/" << nPackets << " 全流程（发送）");
                 NS_LOG_INFO ("============================================================");
                 uint32_t offset = i * payloadPerPacket;
                 uint32_t fragLen = (i + 1 == nPackets)
@@ -201,6 +215,7 @@ SesManager::ProcessSendRequest (Ptr<ExtendedOperationMetadata> metadata, Ptr<Pac
                     continue;
                 Ptr<Packet> frag = packet->CreateFragment (offset, fragLen);
                 frag->AddPacketTag (SoftUeFragmentTag (i + 1, nPackets));
+                // SoftUeTransactionTag is already on frag (copied from packet by CreateFragment)
                 SesPdsRequest request = baseRequest;
                 request.packet = frag;
                 request.pkt_len = static_cast<uint16_t> (fragLen);

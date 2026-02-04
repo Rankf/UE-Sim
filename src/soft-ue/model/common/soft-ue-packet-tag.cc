@@ -508,4 +508,86 @@ SoftUeFragmentTag::SetTotalFragments (uint32_t total)
     m_totalFragments = total;
 }
 
+// ============================================================================
+// SoftUeTransactionTag Implementation
+// ============================================================================
+
+NS_OBJECT_ENSURE_REGISTERED (SoftUeTransactionTag);
+
+TypeId
+SoftUeTransactionTag::GetTypeId (void)
+{
+    static TypeId tid = TypeId ("ns3::SoftUeTransactionTag")
+        .SetParent<Tag> ()
+        .SetGroupName ("SoftUe")
+        .AddConstructor<SoftUeTransactionTag> ();
+    return tid;
+}
+
+TypeId
+SoftUeTransactionTag::GetInstanceTypeId (void) const
+{
+    return GetTypeId ();
+}
+
+uint32_t
+SoftUeTransactionTag::GetSerializedSize (void) const
+{
+    return sizeof (uint32_t) * 2;
+}
+
+void
+SoftUeTransactionTag::Serialize (TagBuffer i) const
+{
+    i.WriteU32 (m_transactionIndex);
+    i.WriteU32 (m_totalTransactions);
+}
+
+void
+SoftUeTransactionTag::Deserialize (TagBuffer i)
+{
+    m_transactionIndex = i.ReadU32 ();
+    m_totalTransactions = i.ReadU32 ();
+}
+
+void
+SoftUeTransactionTag::Print (std::ostream &os) const
+{
+    os << "SoftUeTransactionTag [transaction=" << m_transactionIndex << "/" << m_totalTransactions << "]";
+}
+
+SoftUeTransactionTag::SoftUeTransactionTag ()
+    : m_transactionIndex (0), m_totalTransactions (0)
+{
+}
+
+SoftUeTransactionTag::SoftUeTransactionTag (uint32_t transactionIndex, uint32_t totalTransactions)
+    : m_transactionIndex (transactionIndex), m_totalTransactions (totalTransactions)
+{
+}
+
+uint32_t
+SoftUeTransactionTag::GetTransactionIndex (void) const
+{
+    return m_transactionIndex;
+}
+
+void
+SoftUeTransactionTag::SetTransactionIndex (uint32_t index)
+{
+    m_transactionIndex = index;
+}
+
+uint32_t
+SoftUeTransactionTag::GetTotalTransactions (void) const
+{
+    return m_totalTransactions;
+}
+
+void
+SoftUeTransactionTag::SetTotalTransactions (uint32_t total)
+{
+    m_totalTransactions = total;
+}
+
 } // namespace ns3

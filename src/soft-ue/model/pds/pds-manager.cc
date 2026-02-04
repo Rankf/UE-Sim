@@ -240,13 +240,19 @@ PdsManager::ProcessReceivedPacket (Ptr<Packet> packet, uint32_t sourceEndpoint, 
   // Remove PDS header to get payload for upper layer
   packet->RemoveHeader (pdsHeader);
 
-  // E2E log: 小包 i/N 全流程（收端）when this packet is a SES fragment
+  // E2E log: 小包 i/N（可选 大包 k/N）全流程（收端）when this packet is a SES fragment
   SoftUeFragmentTag fragTag;
   if (packet->PeekPacketTag (fragTag))
     {
       NS_LOG_INFO ("============================================================");
-      NS_LOG_INFO (" [UEC-E2E] 小包 " << fragTag.GetFragmentIndex () << "/" << fragTag.GetTotalFragments ()
-                   << " 全流程（收端）");
+      SoftUeTransactionTag txTag;
+      if (packet->PeekPacketTag (txTag) && txTag.GetTotalTransactions () > 0)
+        NS_LOG_INFO (" [UEC-E2E] 大包 " << txTag.GetTransactionIndex () << "/" << txTag.GetTotalTransactions ()
+                     << " 小包 " << fragTag.GetFragmentIndex () << "/" << fragTag.GetTotalFragments ()
+                     << " 全流程（收端）");
+      else
+        NS_LOG_INFO (" [UEC-E2E] 小包 " << fragTag.GetFragmentIndex () << "/" << fragTag.GetTotalFragments ()
+                     << " 全流程（收端）");
       NS_LOG_INFO ("============================================================");
     }
 
