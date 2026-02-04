@@ -100,21 +100,66 @@ UE-Sim serves two primary objectives:
 
 ```
 UE-Sim/
-├── src/soft-ue/                      # UEC protocol stack module
+├── src/soft-ue/                      # UEC protocol stack implementation
 │   ├── model/
-│   │   ├── ses/                      # SES implementation (Slicing, Metadata, MSN)
-│   │   ├── pds/                      # PDS implementation (Dispatcher, PDC Allocator)
-│   │   ├── pdc/                      # PDC implementation (IPDC/TPDC + RTO)
-│   │   ├── network/                  # ns-3 net device + channel integration
+│   │   ├── ses/                      # SES (Semantic Sub-layer)
+│   │   │   ├── ses-manager.h/cc     # SES manager and coordination
+│   │   │   ├── operation-metadata.h/cc  # Message sequence number (MSN) management
+│   │   │   └── msn-entry.h/cc       # MSN entry tracking
+│   │   ├── pds/                      # PDS (Packet Delivery Sub-layer)
+│   │   │   ├── pds-manager.h/cc     # Central packet dispatcher
+│   │   │   ├── pds-header.cc        # PDS header definitions
+│   │   │   ├── pds-common.h         # Common PDS definitions
+│   │   │   └── pds-statistics.cc    # PDS statistics tracking
+│   │   ├── pdc/                      # PDC (Packet Delivery Context)
+│   │   │   ├── pdc-base.h/cc        # Base PDC interface
+│   │   │   ├── ipdc.h/cc            # IPDC: Unreliable, low-latency transport
+│   │   │   ├── tpdc.h/cc            # TPDC: Reliable transport with ACK
+│   │   │   └── rto-timer/           # Retransmission timeout logic
+│   │   │       └── rto-timer.h/cc   # RTO timer implementation
+│   │   ├── network/                  # ns-3 integration layer
+│   │   │   ├── soft-ue-net-device.h/cc    # Network device implementation
+│   │   │   └── soft-ue-channel.h/cc       # Channel model
 │   │   └── common/                   # Shared utilities
-│   ├── helper/                       # Helper APIs
-│   └── test/                         # Tests
-├── scratch/
-│   ├── Soft-UE/                      # Throughput stress test program
-│   └── Soft-UE-E2E-Concepts/         # End-to-end concept walkthrough
-├── attachment/                       # README diagrams
-└── docs/                             # Documentation assets
+│   │       ├── soft-ue-packet-tag.h/cc    # Packet tags
+│   │       └── transport-layer.h    # Transport layer definitions
+│   ├── helper/                       # Helper classes for simulation setup
+│   │   └── soft-ue-helper.h/cc      # Main helper API
+│   └── test/                         # Unit and integration tests
+│       ├── ses-manager-test.cc      # SES layer tests
+│       ├── pds-manager-test.cc      # PDS layer tests
+│       └── pds-full-test.cc         # Full PDS integration tests
+│
+├── scratch/                          # Example programs and experiments
+│   ├── Soft-UE/                      # Throughput stress test
+│   │   └── Soft-UE.cc               # High-load performance testing
+│   └── Soft-UE-E2E-Concepts/         # End-to-end walkthrough
+│       └── uec-e2e-concepts.cc      # Protocol flow demonstration
+│
+├── examples/                         # Usage examples and tutorials
+│   ├── first-soft-ue.cc             # Getting started example
+│   ├── performance-benchmark.cc     # Performance testing suite
+│   └── ai-network-simulation.cc     # AI workload simulation
+│
+├── benchmarks/                       # Performance benchmark suite
+│   ├── soft-ue-performance-benchmark.cc   # Comprehensive benchmarks
+│   └── e2e-demo-optimized.cc        # Real-world workload demos
+│
+├── docs/                             # Documentation
+├── attachment/                       # Architecture diagrams
+│   ├── SUETArchitecture.png
+│   └── CoreComponents.png
+├── CMakeLists.txt                    # Build configuration
+├── ns3                               # ns-3 build script
+├── README.md                         # This file
+└── VERSION                           # Version: 1.0.0
 ```
+
+**Key Directories:**
+- **`src/soft-ue/model/`**: Core protocol implementation (SES, PDS, PDC layers)
+- **`scratch/`**: Runnable test programs demonstrating key features
+- **`examples/`**: Tutorial-style examples for users
+- **`benchmarks/`**: Performance validation and comparison tests
 
 ---
 
