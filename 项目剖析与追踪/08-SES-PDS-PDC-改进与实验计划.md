@@ -53,20 +53,41 @@
 
 ---
 
-## 4. 阶段三：控制面占位（未实施）
+## 4. 阶段三：控制面占位（已实施）
 
-计划中的 Tx rsp、Error event、Eager size/Pause、Rx req/Rx rsp 等占位未在本轮实施；可在阶段一、二稳定后于现有链路上挂接。
+- **B3**：在 PDS Manager 与 SES 间增加占位：发送完成后 `NotifyTxResponse`（Tx rsp）；错误时 `NotifyPdsErrorEvent`（Error event）；收端 `ProcessReceiveRequest` 内打日志「Rx req/Rx rsp (placeholder)」；流控 `NotifyEagerSize`、`NotifyPause` 占位（可先打日志）。见 `ses-manager.cc/h`、`pds-manager.cc`。
+
+## 5. 功能对齐表（与三条参考定义）
+
+| 定义项 | 参考定义 | 实现状态 | 对应任务 |
+|--------|----------|----------|----------|
+| **SES 端点寻址** | Endpoint addressing | 已对齐 | ValidateOperationMetadata、ProcessSendRequest |
+| **SES 授权** | Authorization | 占位 | C2：ValidateAuthorization（当前恒 true） |
+| **SES 消息类型/语义头** | Message types, semantic header | 部分对齐 | ExtendedOperationMetadata、InitializeSesHeader |
+| **SES 事务→多包** | Breaks down each transaction into multiple packets | 已对齐 | A1/A2/A3：CalculatePacketCount、RequiresFragmentation、ProcessSendRequest(metadata, packet) 拆包 |
+| **PDS PDC 分配** | Allocation of PDCs | 已对齐 | AllocatePdc、EnsureReceivePdc |
+| **PDS 非 PDC 错误上报 SES** | Handling error events not associated with a specific PDC | 已对齐 | C1：NotifyPdsErrorEvent(0, …) |
+| **PDS 将 SES 包分配给 PDC** | Assignment of SES packets to PDCs | 已对齐 | DispatchPacket |
+| **PDS 状态/流控对 SES 可见** | Eager size, Pause | 占位 | B3：NotifyEagerSize、NotifyPause（占位） |
+| **收端经 SES** | PDS → (PDC) → Right SES (Rx req) → App | 已对齐 | B1：ProcessReceivedPacket → ProcessReceiveRequest → DeliverReceivedPacket |
+| **收端经 PDC 处理** | pdc->HandleReceivedPacket | 暂缺 | B2：约第 11 包崩溃，调用暂注释 |
+| **控制面 Tx rsp / Error / Rx req·rsp** | Tx rsp, Error event, Rx req/Rx rsp | 占位 | B3：NotifyTxResponse、NotifyPdsErrorEvent、Rx req/Rx rsp 日志占位 |
+
+## 6. IPDC vs TPDC 与可靠性（C3）
+
+- **IPDC**（Unreliable）：`src/soft-ue/model/pdc/ipdc.cc`，当前 E2E 使用 IPDC（pdc_id 1..maxPdcCount），无 RTO/重传/ACK。
+- **TPDC**（Reliable）：`src/soft-ue/model/pdc/tpdc.cc`，含 RTO、重传、ACK、duplicate ACK 处理；可靠性/顺序/去重在 TPDC 中实现。若需在 E2E 或单测中体现可靠性，可选用 TPDC（pdc_id >= MAX_PDC）或增加一条 TPDC 路径/文档说明。
 
 ---
 
-## 5. 文档与回归
+## 7. 文档与回归
 
 - **文档**：本文件为 [07-UEC端到端概念实验与图解.md](07-UEC端到端概念实验与图解.md) 第六节「改进与实验计划」的落地记录。
 - **回归**：每阶段后运行 `./ns3 run uec-e2e-concepts` 与 `./ns3 run Soft-UE`（若保留）；单元测试可通过 `./ns3 build` 后运行对应 test 可执行文件进行验证。
 
 ---
 
-## 6. 关键文件索引
+## 8. 关键文件索引
 
 - [src/soft-ue/model/network/soft-ue-net-device.cc](src/soft-ue/model/network/soft-ue-net-device.cc)：Send → DispatchPacket；ReceivePacket → ProcessReceivedPacket；TransmitToChannel；DeliverReceivedPacket
 - [src/soft-ue/model/pds/pds-manager.cc](src/soft-ue/model/pds/pds-manager.cc)：ProcessSesRequest → DispatchPacket；ProcessReceivedPacket（解析 pdc_id、EnsureReceivePdc、去头、DeliverReceivedPacket）；EnsureReceivePdc；AllocatePdc（PDC 初始化与 Activate）
@@ -74,7 +95,7 @@
 
 ---
 
-## 7. 日志与参考图对齐说明
+## 9. 日志与参考图对齐说明
 
 **为何之前日志“感觉怪怪的”？**  
 参考图（Core Components / System Architecture）中，数据路径应**显式经过 PDS Manager 与 PDC 实例**；之前 E2E 日志只打出「Device → 经 PDS Manager DispatchPacket」和「Channel Transmit」，中间**没有**打出 PDS Manager 的 AllocatePdc、SendPacketThroughPdc 以及 PDC 的 TransmitPacket，所以看起来像“设备直接到信道”，与图中 **SES → PDS Manager → PDC → Channel** 不一致。
@@ -87,10 +108,10 @@
 
 - **发送路径**（与图一致）：  
   `Device Send` → `[PDS] PDS Manager AllocatePdc pdc_id=… → SendPacketThroughPdc（经 PDC 发）` → `[PDS] SendPacketThroughPdc pdc_id=… → PDC 实例发送` → `[PDC] PDC pdc_id=… TransmitPacket → TransmitToChannel（到信道）` → `Channel Transmit`。
-- **接收路径**（与图部分一致）：  
-  `Channel ReceivePacket` → `Device ReceivePacket` → `[PDS] ProcessReceivedPacket 解析 pdc_id=… 按 pdc_id 分发（收端 PDC）` → `[PDS] 去 PDS 头 → DeliverReceivedPacket 递交应用层（收端未经 SES 层）` → `Device ProcessReceiveQueue` → `App HandleRead`。
+- **接收路径**（与图一致）：  
+  `Channel ReceivePacket` → `Device ReceivePacket` → `[PDS] ProcessReceivedPacket 解析 pdc_id=…` → `[PDS] 去 PDS 头 → SesManager::ProcessReceiveRequest（收端经 SES → App）` → `[SES] ProcessReceiveRequest … → DeliverReceivedPacket` → `Device ProcessReceiveQueue` → `App HandleRead`。
 
 **与参考图的剩余差异：**
 
-- **收端 SES**：图中收端应为 **PDS Manager → PDC → Right SES（Rx req）→ App**。当前实现是 PDS Manager 去头后直接 `DeliverReceivedPacket` → 设备回调 → App，**收端未经过 SesManager::ProcessReceiveRequest**，因此日志中注明「收端未经 SES 层」。
-- **控制面**：图中 Tx rsp、Eager size、Pause、Error event、Rx req/Rx rsp 等信令尚未实现，仅数据路径与部分日志与图对齐。
+- **收端经 PDC**：图中收端可为 PDS → PDC → SES。当前实现为 PDS → SES → App；`pdc->HandleReceivedPacket` 因约第 11 包崩溃暂未调用（B2 未完成）。
+- **控制面**：Tx rsp、Error event、Rx req/Rx rsp 已占位（B3）；Eager size、Pause 为占位接口，可打日志与图对齐。

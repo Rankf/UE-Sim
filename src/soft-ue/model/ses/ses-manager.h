@@ -124,6 +124,14 @@ public:
     bool ProcessSendRequest (Ptr<ExtendedOperationMetadata> metadata);
 
     /**
+     * @brief Process send request with packet (transaction-level; may fragment into multiple packets)
+     * @param metadata Operation metadata (payload.length used for fragmentation when packet provided)
+     * @param packet Packet to send (nullptr = validation only, no dispatch)
+     * @return true if request was processed successfully
+     */
+    bool ProcessSendRequest (Ptr<ExtendedOperationMetadata> metadata, Ptr<Packet> packet);
+
+    /**
      * @brief Process received request packet
      * @param request Received PDC to SES request
      * @return true if request was processed successfully
@@ -231,6 +239,12 @@ public:
      * @brief Reset statistics
      */
     void ResetStatistics (void);
+
+    /** B3: Control plane placeholders (log only; for alignment with reference diagram) */
+    void NotifyTxResponse (uint16_t pdcId);
+    void NotifyPdsErrorEvent (uint16_t pdcId, int errorCode, const std::string& details);
+    void NotifyEagerSize (uint32_t eagerSize);
+    void NotifyPause (bool paused);
 
     // Traced callbacks for monitoring
     TracedCallback<Ptr<ExtendedOperationMetadata>> m_txTrace;        ///< Packet transmit trace
@@ -376,6 +390,13 @@ private:
      * @return true if metadata is valid
      */
     bool ValidateOperationMetadata (Ptr<ExtendedOperationMetadata> metadata) const;
+
+    /**
+     * @brief C2: Authorization check placeholder (e.g. capability/token; currently always allow)
+     * @param metadata Operation metadata
+     * @return true if authorized
+     */
+    bool ValidateAuthorization (Ptr<ExtendedOperationMetadata> metadata) const;
 
     /**
      * @brief Validate PDC SES request

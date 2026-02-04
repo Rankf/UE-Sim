@@ -57,6 +57,7 @@ struct E2EConceptsConfig
   uint32_t nodeCount = 2;
   uint32_t packetSize = 256;
   uint32_t packetCount = 20;       // 少量包便于理解
+  uint32_t largeTransactionSize = 0; // 若 >0：先发一条「大事务」(单包大 payload)，SES 按 MTU 拆成多包
   Time sendInterval = MilliSeconds (10);
   uint32_t maxPdcCount = 64;
   DataRate channelDataRate = DataRate ("1Gbps");
@@ -96,6 +97,7 @@ private:
   uint32_t m_numPackets;
   uint32_t m_packetsSent;
   uint32_t m_packetsReceived;
+  bool m_largeTransactionSent;  // 是否已发送「1 事务多包」大消息
   Address m_destination;
   uint16_t m_port;
   bool m_isServer;
@@ -107,7 +109,7 @@ private:
 
 ConceptsDemoApp::ConceptsDemoApp ()
   : m_packetSize (0), m_numPackets (0), m_packetsSent (0), m_packetsReceived (0),
-    m_port (0), m_isServer (false)
+    m_largeTransactionSent (false), m_port (0), m_isServer (false)
 {
 }
 
@@ -183,6 +185,39 @@ ConceptsDemoApp::SendPacket ()
   if (!m_sesManager || !m_pdsManager)
     return;
 
+  Ptr<SoftUeNetDevice> device;
+  for (uint32_t i = 0; i < GetNode ()->GetNDevices (); ++i)
+    {
+      device = GetNode ()->GetDevice (i)->GetObject<SoftUeNetDevice> ();
+      if (device)
+        break;
+    }
+  if (!device)
+    {
+      ScheduleSend ();
+      return;
+    }
+
+  // ---------- A3: 1 事务多包 — 先发一条大消息（无 PDS 头），由 SES 按 MTU 拆成多包 ----------
+  if (!m_largeTransactionSent && m_config.largeTransactionSize > 0)
+    {
+      Ptr<Packet> bigPacket = Create<Packet> (m_config.largeTransactionSize);
+      if (!bigPacket)
+        {
+          m_largeTransactionSent = true;
+          ScheduleSend ();
+          return;
+        }
+      bigPacket->AddPacketTag (SoftUeTimingTag (Simulator::Now ()));
+      NS_LOG_INFO ("[UEC-E2E] [App] ① 应用层 1 事务大消息 size=" << m_config.largeTransactionSize
+                   << " B → device->Send()（SES 将按 MTU 拆成多包，SOM/EOM 见 [SES] 日志）");
+      (void) device->Send (bigPacket, m_destination, 0x0800);
+      m_largeTransactionSent = true;
+      m_packetsSent++;
+      ScheduleSend ();
+      return;
+    }
+
   Ptr<Packet> packet = Create<Packet> (m_packetSize);
   if (!packet)
     return;
@@ -229,19 +264,9 @@ ConceptsDemoApp::SendPacket ()
   packet->AddPacketTag (SoftUeTimingTag (Simulator::Now ()));
   NS_LOG_INFO ("[UEC-E2E] [App] ④ SES 校验通过 → 打时间戳 → 调用 device->Send()（随后经 PDS Manager → PDC → Channel）");
 
-  Ptr<SoftUeNetDevice> device;
-  for (uint32_t i = 0; i < GetNode ()->GetNDevices (); ++i)
-    {
-      device = GetNode ()->GetDevice (i)->GetObject<SoftUeNetDevice> ();
-      if (device)
-        break;
-    }
-  if (device)
-    {
-      bool success = device->Send (packet, m_destination, 0x0800);
-      if (success)
-        m_packetsSent++;
-    }
+  bool success = device->Send (packet, m_destination, 0x0800);
+  if (success)
+    m_packetsSent++;
 
   ScheduleSend ();
 }
@@ -334,6 +359,7 @@ main (int argc, char* argv[])
   CommandLine cmd;
   cmd.AddValue ("packetSize", "每包大小(字节)", config.packetSize);
   cmd.AddValue ("packetCount", "发送包数", config.packetCount);
+  cmd.AddValue ("largeTransactionSize", "若>0 先发一条大事务(字节)，SES按MTU拆成多包", config.largeTransactionSize);
   cmd.AddValue ("maxPdcCount", "最大 PDC 数", config.maxPdcCount);
   cmd.Parse (argc, argv);
 
@@ -351,7 +377,11 @@ main (int argc, char* argv[])
   std::cout << std::string (60, '=') << "\n";
   std::cout << "  packetSize=" << config.packetSize
             << " packetCount=" << config.packetCount
+            << " largeTransactionSize=" << config.largeTransactionSize
             << " maxPdcCount=" << config.maxPdcCount << "\n";
+  if (config.largeTransactionSize > 0)
+    std::cout << "  (1 事务多包: 先发 " << config.largeTransactionSize
+              << " B 大消息，SES 将拆成多包，见 [SES] 事务→多包 日志)\n";
 
   NodeContainer nodes;
   nodes.Create (config.nodeCount);

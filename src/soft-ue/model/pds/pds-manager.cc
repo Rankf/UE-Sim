@@ -143,6 +143,11 @@ PdsManager::ProcessSesRequest (const SesPdsRequest& request)
     {
       m_statistics->IncrementErrors (PdsErrorCode::PROTOCOL_ERROR);
     }
+    if (m_sesManager)
+      {
+        m_sesManager->NotifyPdsErrorEvent (0, static_cast<int> (PdsErrorCode::PROTOCOL_ERROR),
+                                           "Invalid SES PDS request");  // C1: general error to SES
+      }
     m_state = PDS_ERROR;
     return false;
   }
@@ -155,6 +160,11 @@ PdsManager::ProcessSesRequest (const SesPdsRequest& request)
     {
       m_statistics->IncrementErrors (PdsErrorCode::RESOURCE_EXHAUSTED);
     }
+    if (m_sesManager)
+      {
+        m_sesManager->NotifyPdsErrorEvent (0, static_cast<int> (PdsErrorCode::RESOURCE_EXHAUSTED),
+                                           "Network device not available");  // C1: general error to SES
+      }
     m_state = PDS_ERROR;
     return false;
   }
@@ -214,13 +224,12 @@ PdsManager::ProcessReceivedPacket (Ptr<Packet> packet, uint32_t sourceEndpoint, 
     NS_LOG_WARN ("ProcessReceivedPacket: could not ensure PDC " << pdcId << ", delivering anyway");
   }
 
+  // B2: pdc->HandleReceivedPacket deferred — still segfaults at ~pdc_id 11 with or without packet copy.
+  // Receive path remains PDS → SES → App; PDC receive handling to be debugged separately.
   Ptr<PdcBase> pdc = GetPdc (pdcId);
   if (pdc)
   {
-    // PDC receive handling: call would enqueue to PDC and update PDC state.
-    // Currently skipped (causes segfault after ~10 packets in E2E; to be debugged).
-    // Receive path still goes through PDS Manager and pdc_id dispatch via EnsureReceivePdc.
-    // (void) pdc->HandleReceivedPacket (packet, sourceEndpoint);
+    // (void) pdc->HandleReceivedPacket (packet->Copy (), sourceEndpoint);
   }
 
   // Remove PDS header to get payload for upper layer
@@ -246,9 +255,24 @@ PdsManager::ProcessReceivedPacket (Ptr<Packet> packet, uint32_t sourceEndpoint, 
 
   NS_LOG_DEBUG ("Processed received packet - pdc_id=" << pdcId << " payload size=" << packet->GetSize ());
 
-  NS_LOG_INFO ("[UEC-E2E] [PDS] 去 PDS 头 → DeliverReceivedPacket 递交应用层（收端未经 SES 层）");
+  // Receive path: PDS → SES (ProcessReceiveRequest) → App (B1)
+  if (m_sesManager)
+    {
+      PdcSesRequest req;
+      req.pdc_id = pdcId;
+      req.rx_pkt_handle = 0;
+      req.packet = packet;
+      req.pkt_len = static_cast<uint16_t> (packet->GetSize ());
+      req.next_hdr = PDSNextHeader::PAYLOAD;
+      req.orig_pdcid = pdcId;
+      req.orig_psn = pdsHeader.GetSequenceNumber ();
+      NS_LOG_INFO ("[UEC-E2E] [PDS] 去 PDS 头 → SesManager::ProcessReceiveRequest（收端经 SES → App）");
+      if (m_sesManager->ProcessReceiveRequest (req))
+        return true;
+      // If SES declined, fall back to direct delivery
+    }
 
-  // Deliver payload to upper layer (device enqueues and calls app callback)
+  NS_LOG_INFO ("[UEC-E2E] [PDS] 去 PDS 头 → DeliverReceivedPacket 递交应用层");
   m_netDevice->DeliverReceivedPacket (packet);
   return true;
 }
@@ -533,6 +557,11 @@ PdsManager::DispatchPacket (const SesPdsRequest& request)
     {
       m_statistics->IncrementErrors (PdsErrorCode::PDC_FULL);
     }
+    if (m_sesManager)
+      {
+        m_sesManager->NotifyPdsErrorEvent (0, static_cast<int> (PdsErrorCode::PDC_FULL),
+                                           "PDC allocation failed");  // C1: general error to SES
+      }
     return false;
   }
 
@@ -541,6 +570,10 @@ PdsManager::DispatchPacket (const SesPdsRequest& request)
 
   // Send packet through PDC
   bool success = SendPacketThroughPdc (pdcId, request.packet, request.som, request.eom);
+  if (success && m_sesManager)
+    {
+      m_sesManager->NotifyTxResponse (pdcId);  // B3: Control plane Tx rsp placeholder
+    }
   if (!success)
   {
     NS_LOG_ERROR ("Failed to send packet through PDC " << pdcId);
@@ -560,6 +593,10 @@ PdsManager::HandlePdcError (uint16_t pdcId, PdsErrorCode error, const std::strin
       m_statistics->IncrementErrors (error);
     }
 
+  if (m_sesManager)
+    {
+      m_sesManager->NotifyPdsErrorEvent (pdcId, static_cast<int> (error), errorDetails);  // B3: Error event placeholder
+    }
   NS_LOG_WARN ("PDC error handled for PDC " << pdcId << ": " << errorDetails);
 }
 

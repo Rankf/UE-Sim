@@ -124,7 +124,13 @@ SesManager::GetNetDevice (void) const
 bool
 SesManager::ProcessSendRequest (Ptr<ExtendedOperationMetadata> metadata)
 {
-    NS_LOG_FUNCTION (this << metadata);
+    return ProcessSendRequest (metadata, nullptr);
+}
+
+bool
+SesManager::ProcessSendRequest (Ptr<ExtendedOperationMetadata> metadata, Ptr<Packet> packet)
+{
+    NS_LOG_FUNCTION (this << metadata << packet);
 
     if (!metadata)
     {
@@ -156,9 +162,6 @@ SesManager::ProcessSendRequest (Ptr<ExtendedOperationMetadata> metadata)
         return false;
     }
 
-    // Create SES header and forward to PDS
-    SesPdsRequest sesRequest = InitializeSesHeader (metadata);
-
     if (!m_pdsManager)
     {
         NS_LOG_ERROR ("PDS Manager not available");
@@ -166,28 +169,80 @@ SesManager::ProcessSendRequest (Ptr<ExtendedOperationMetadata> metadata)
         return false;
     }
 
-    // Add entry to MSN table for tracking
-    uint64_t messageId = GenerateMessageId (metadata);
-    uint32_t estimatedSize = 1024; // Default 1KB estimate
-    if (!m_msnTable->AddEntry (messageId, 0, estimatedSize))
+    // When packet is provided, SES breaks down the transaction into one or multiple packets and submits to PDS
+    if (packet)
     {
-        NS_LOG_WARN ("Failed to add MSN entry for message " << messageId);
+        metadata->payload.length = packet->GetSize ();
+        uint32_t payloadLen = static_cast<uint32_t> (metadata->payload.length);
+        uint32_t nPackets = metadata->CalculatePacketCount (m_maxMtu);
+        bool fragment = metadata->RequiresFragmentation (m_maxMtu);
+
+        if (fragment && nPackets > 1)
+        {
+            // Transaction → multiple packets: split by MTU and submit each via PDS
+            SesPdsRequest baseRequest = InitializeSesHeader (metadata);
+            uint32_t messageId = baseRequest.rod_context;
+            uint32_t payloadPerPacket = (payloadLen + nPackets - 1) / nPackets;
+            for (uint32_t i = 0; i < nPackets; ++i)
+            {
+                uint32_t offset = i * payloadPerPacket;
+                uint32_t fragLen = (i + 1 == nPackets)
+                    ? (payloadLen - offset)
+                    : payloadPerPacket;
+                if (fragLen == 0)
+                    continue;
+                Ptr<Packet> frag = packet->CreateFragment (offset, fragLen);
+                SesPdsRequest request = baseRequest;
+                request.packet = frag;
+                request.pkt_len = static_cast<uint16_t> (fragLen);
+                request.som = (i == 0);
+                request.eom = (i == nPackets - 1);
+                request.rod_context = messageId;
+                bool ok = m_pdsManager->DispatchPacket (request);
+                if (!ok)
+                {
+                    m_totalErrors++;
+                    m_state = SES_IDLE;
+                    return false;
+                }
+                m_totalPacketsGenerated++;
+                NS_LOG_INFO ("[UEC-E2E] [SES] 事务→多包: 包 " << (i + 1) << "/" << nPackets
+                             << " SOM=" << request.som << " EOM=" << request.eom << " len=" << fragLen);
+            }
+            NS_LOG_INFO ("[UEC-E2E] [SES] ③ SES 层 ProcessSendRequest: 1 事务 → " << nPackets << " 包");
+        }
+        else
+        {
+            // Single packet: one SesPdsRequest and submit
+            SesPdsRequest request = InitializeSesHeader (metadata);
+            request.packet = packet;
+            request.pkt_len = static_cast<uint16_t> (payloadLen);
+            request.som = true;
+            request.eom = true;
+            request.rod_context = GenerateMessageId (metadata);
+            bool ok = m_pdsManager->DispatchPacket (request);
+            if (!ok)
+            {
+                m_totalErrors++;
+                m_state = SES_IDLE;
+                return false;
+            }
+            m_totalPacketsGenerated++;
+            NS_LOG_INFO ("[UEC-E2E] [SES] ③ SES 层 ProcessSendRequest: src_node=" << metadata->GetSourceNodeId ()
+                         << " dst_node=" << metadata->GetDestinationNodeId () << " job_id=" << metadata->job_id
+                         << " messages_id=" << metadata->messages_id << " → 校验通过，单包发送");
+        }
     }
-    sesRequest.rod_context = messageId;
+    else
+    {
+        NS_LOG_INFO ("[UEC-E2E] [SES] ③ SES 层 ProcessSendRequest: src_node=" << metadata->GetSourceNodeId ()
+                     << " dst_node=" << metadata->GetDestinationNodeId () << " job_id=" << metadata->job_id
+                     << " messages_id=" << metadata->messages_id << " → 校验通过，允许发送");
+    }
 
-    // Note: In current architecture, the packet is sent directly by application
-    // through device->Send(), so we don't need to create PDS requests that could
-    // interfere with the actual packet transmission.
-    // For now, just validate the metadata and return success to allow the packet to flow.
-    NS_LOG_INFO ("[UEC-E2E] [SES] ③ SES 层 ProcessSendRequest: src_node=" << metadata->GetSourceNodeId ()
-                 << " dst_node=" << metadata->GetDestinationNodeId () << " job_id=" << metadata->job_id
-                 << " messages_id=" << metadata->messages_id << " → 校验通过，允许发送");
     m_totalSuccessfulRequests++;
-
-    // Reset state machine to idle
     m_state = SES_IDLE;
-
-    return true; // Allow packet to proceed through device->Send()
+    return true;
 }
 
 bool
@@ -207,25 +262,25 @@ SesManager::ProcessReceiveRequest (const PdcSesRequest& request)
 
     try
     {
-        // Parse the received request
+        // Optional: parse into metadata for queue/processing (B1: receive path via SES)
         Ptr<ExtendedOperationMetadata> metadata = ParseReceivedRequest (request);
-        if (!metadata)
+        if (metadata)
         {
-            NS_LOG_WARN ("Failed to parse received request");
-            m_totalErrors++;
-            return false;
+            m_recvRequestQueue.push (request);
+            if (m_state == SES_IDLE)
+                ScheduleProcessing ();
         }
 
-        // Add to receive queue for processing
-        m_recvRequestQueue.push (request);
-
-        // Trigger processing if needed
-        if (m_state == SES_IDLE)
+        // B1: Drive delivery to app via device (receive path PDS → SES → App)
+        if (m_netDevice && request.packet)
         {
-            ScheduleProcessing ();
+            NS_LOG_INFO ("[UEC-E2E] [Control] Rx req/Rx rsp (placeholder) pdc_id=" << request.pdc_id);
+            NS_LOG_INFO ("[UEC-E2E] [SES] ProcessReceiveRequest pdc_id=" << request.pdc_id
+                         << " → DeliverReceivedPacket（收端经 SES → App）");
+            m_netDevice->DeliverReceivedPacket (request.packet);
         }
-
-        NS_LOG_DEBUG ("Receive request queued successfully");
+        m_totalSuccessfulRequests++;
+        NS_LOG_DEBUG ("Receive request processed, delivery driven via SES");
         return true;
     }
     catch (const std::exception& e)
@@ -234,6 +289,31 @@ SesManager::ProcessReceiveRequest (const PdcSesRequest& request)
         m_totalErrors++;
         return false;
     }
+}
+
+void
+SesManager::NotifyTxResponse (uint16_t pdcId)
+{
+  NS_LOG_INFO ("[UEC-E2E] [Control] Tx rsp (placeholder) pdc_id=" << pdcId);
+}
+
+void
+SesManager::NotifyPdsErrorEvent (uint16_t pdcId, int errorCode, const std::string& details)
+{
+  NS_LOG_INFO ("[UEC-E2E] [Control] Error event (placeholder) pdc_id=" << pdcId
+               << " code=" << errorCode << " " << details);
+}
+
+void
+SesManager::NotifyEagerSize (uint32_t eagerSize)
+{
+  NS_LOG_INFO ("[UEC-E2E] [Control] Eager size (placeholder) size=" << eagerSize);
+}
+
+void
+SesManager::NotifyPause (bool paused)
+{
+  NS_LOG_INFO ("[UEC-E2E] [Control] Pause (placeholder) paused=" << paused);
 }
 
 bool
@@ -645,8 +725,24 @@ SesManager::ValidateOperationMetadata (Ptr<ExtendedOperationMetadata> metadata) 
         return false;
     }
 
+    // C2: Authorization placeholder (e.g. capability/token check; currently always allow)
+    if (!ValidateAuthorization (metadata))
+    {
+        NS_LOG_WARN ("Authorization check failed (placeholder)");
+        return false;
+    }
+
     NS_LOG_DEBUG ("Operation metadata validation successful");
     return true;
+}
+
+bool
+SesManager::ValidateAuthorization (Ptr<ExtendedOperationMetadata> metadata) const
+{
+  NS_LOG_FUNCTION (this << metadata);
+  // C2: Authorization placeholder (e.g. capability/token check); currently always allow
+  (void) metadata;
+  return true;
 }
 
 SesManager::SesState

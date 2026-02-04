@@ -1,6 +1,7 @@
 #include "soft-ue-net-device.h"
 #include "soft-ue-channel.h"
 #include "../ses/ses-manager.h"
+#include "../ses/operation-metadata.h"
 #include "../pds/pds-manager.h"
 #include "../pdc/pdc-base.h"
 #include "../common/soft-ue-packet-tag.h"
@@ -288,31 +289,25 @@ SoftUeNetDevice::Send (Ptr<Packet> packet, const Address& dest, uint16_t protoco
       return false;
     }
 
-  // Send through SES manager
-  SesPdsRequest request;
-  request.packet = packet;
-  request.dst_fep = destFep;
-  request.src_fep = m_localFep;
-  request.tc = 0;  // Default traffic class
-  request.mode = 0;  // Default delivery mode
-  request.next_hdr = PDSNextHeader::PAYLOAD;
-  request.som = true;
-  request.eom = true;
+  // Build metadata and send through SES (SES may fragment transaction into multiple packets)
+  Ptr<ExtendedOperationMetadata> meta = Create<ExtendedOperationMetadata> ();
+  meta->SetSourceEndpoint (m_localFep, 1);
+  meta->SetDestinationEndpoint (destFep, 1);
+  meta->payload.length = packet->GetSize ();
 
   NS_LOG_INFO ("[UEC-E2E] [Device] ⑤ 设备层 Send: FEP " << m_localFep << " → FEP " << destFep
-               << " size=" << packet->GetSize () << " B → 经 PDS Manager DispatchPacket");
+               << " size=" << packet->GetSize () << " B → SES ProcessSendRequest(metadata, packet)");
 
-  // Submit Tx request to PDS Manager: DispatchPacket (AllocatePdc + SendPacketThroughPdc → PDC → Channel)
   bool success = false;
-  if (m_pdsManager)
+  if (m_sesManager)
     {
-      success = m_pdsManager->DispatchPacket (request);
+      success = m_sesManager->ProcessSendRequest (meta, packet);
     }
 
   if (!success)
     {
       m_statistics.droppedPackets++;
-      NS_LOG_ERROR ("Failed to send packet via PDS Manager (DispatchPacket)");
+      NS_LOG_ERROR ("Failed to send packet via SES ProcessSendRequest");
     }
 
   return success;

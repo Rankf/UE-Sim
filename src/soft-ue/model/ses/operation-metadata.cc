@@ -133,4 +133,33 @@ ExtendedOperationMetadata::ToString (void) const
   return oss.str ();
 }
 
+uint32_t
+ExtendedOperationMetadata::CalculatePacketCount (uint32_t mtu) const
+{
+  NS_LOG_FUNCTION (this << mtu);
+
+  // Conservative header overhead: PDS + SES + lower layers (e.g. Ethernet)
+  const uint32_t kHeaderOverhead = 128u;
+  uint32_t payloadLen = static_cast<uint32_t> (payload.length);
+  if (payloadLen == 0)
+    {
+      return 1;
+    }
+  if (mtu <= kHeaderOverhead)
+    {
+      NS_LOG_WARN ("MTU " << mtu << " <= header overhead " << kHeaderOverhead << ", using 1 packet");
+      return 1;
+    }
+  uint32_t payloadPerPacket = mtu - kHeaderOverhead;
+  uint32_t n = (payloadLen + payloadPerPacket - 1) / payloadPerPacket;
+  return n;
+}
+
+bool
+ExtendedOperationMetadata::RequiresFragmentation (uint32_t mtu) const
+{
+  NS_LOG_FUNCTION (this << mtu);
+  return CalculatePacketCount (mtu) > 1;
+}
+
 } // namespace ns3
