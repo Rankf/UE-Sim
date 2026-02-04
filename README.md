@@ -30,10 +30,15 @@
 
 ## UE-Sim Overview
 
-Soft-UE is a software prototype of Ultra Ethernet Specification. Ultra Ethernet is a specification of new protocols for use over Ethernet networks and optional enhancements to existing Ethernet protocols that improve performance, function, and interoperability of AI and HPC applications. The Ultra Ethernet specification covers a broad range of software and hardware relevant to AI and HPC workloads: from the API supported by UE-compliant devices to the services offered by the transport, link, and physical layers, as well as management, interoperability, benchmarks, and compliance requirements. This project aims to help open-source community developers better understand the Ultra Ethernet Specification while verifying its correctness and feasibility.
+UE-Sim is an end-to-end network simulation platform for the [Ultra Ethernet(UE) Specification](https://ultraethernet.org/). 
 
-**Current Release**: SoftUE v1.0.0
-**Website**: https://ultraethernet.org/
+Ultra Ethernet is a specification of new protocols for use over Ethernet networks and optional enhancements to existing Ethernet protocols that improve performance, function, and interoperability of AI and HPC applications. The Ultra Ethernet specification covers a broad range of software and hardware relevant to AI and HPC workloads: from the API supported by UE-compliant devices to the services offered by the transport, link, and physical layers, as well as management, interoperability, benchmarks, and compliance requirements. 
+
+UE-Sim serves two primary objectives:
+
+- **Network Configuration and Performance Evaluation**: UE-Sim provides a Ultra Ethernet platform for GPU manufacturers, AI computing center operators, and other users. It supports constructing topologies of various scales, configuring parameters, and evaluating network performance under different workloads.
+
+- **Ultra Ethernet(UE) Specification Optimization**: The platform enables researchers to optimize Ultra Ethernet(UE) Specification through advancing algorithms and protocol validating. 
 
 ---
 
@@ -87,73 +92,83 @@ UE-Sim/
 └── docs/                             # Documentation assets
 ```
 
-### ns-3 Version Support
-
-**🔄 UE-Sim supports the following ns-3 version**
-
-- **ns-3 v3.44** (Primary support)
-
 ---
 
 ## Getting Started
 
 ### Environment Requirements
 
-- **Operating System**: Linux (Ubuntu 20.04+ recommended)
+- **Operating System**: Linux (Ubuntu 20.04.6 LTS)
 - **Compilers**:
   - **GCC**: 10.1.0+
   - **Clang**: 11.0.0+
+  - **AppleClang**: 13.1.6+ (macOS)
 - **Build Tools**:
-  - **CMake**: 3.13.0+
-  - **Python 3** (used by the `./ns3` wrapper)
+  - **CMake**: 3.13.0+ (Required)
 
 ### Installation
 
 #### Step 1: Install System Dependencies
+
 First, install the essential build tools and libraries:
 
 ```bash
 sudo apt update
-sudo apt install -y build-essential cmake ninja-build git python3
+sudo apt install build-essential cmake git software-properties-common
 ```
 
-#### Step 2: Configure ns-3
-Configure the environment with examples and tests enabled:
+#### Step 2: Check and Upgrade GCC Version
+
+Check your current GCC version:
 
 ```bash
+gcc --version
+```
+
+**If your GCC version is 10.1.0 or higher**, proceed to [Step 3](#step-3-clone-and-configure-UE-Sim).
+
+**If your GCC version is below 10.1.0** (Ubuntu 20.04 default is 9.3.0), upgrade it:
+
+```bash
+# Add Ubuntu Toolchain PPA for newer GCC versions
+sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+sudo apt update
+# Install GCC 10 and G++ 10
+sudo apt install gcc-10 g++-10
+# Set GCC 10 as the default compiler
+sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 100
+sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10
+```
+
+#### Step 3: Clone and Configure UE-Sim
+
+> **Important Note**: [This version of ns3 does not allow direct execution as root user](https://groups.google.com/g/ns-3-users/c/xDtfcaUrCwg?pli=1), please run the following commands as a regular user.
+
+```
+# Clone the project
+git clone https://github.com/kaima2022/UE-Sim.git
+cd UE-Sim
+
+# Configure ns-3 environment
 ./ns3 configure --enable-examples --enable-tests
 ```
 
-#### Step 3: Build and Verify
-Build the project and verify the simulation script:
+####  Step 4: Build 
 
 ```bash
 ./ns3 build
-./ns3 run "Soft-UE --PrintHelp"
 ```
 
 ---
 
 ### Usage
 
-UE-Sim supports end-to-end concept walkthroughs and high-throughput stress testing.
+UE-Sim supports end-to-end concept walkthroughs.
 
-#### 1. Concept Walkthrough Mode
+#### Concept Walkthrough Mode
 Demonstrates the basic protocol interaction with annotated logs, illustrating the flow through SES (fragmentation), PDS (dispatch), and PDC:
 ```bash
 ./ns3 run uec-e2e-concepts -- --transactionSize=4000 --packetCount=2
-```
-
-#### 2. Stress Test Mode
-Evaluates the protocol stack performance at line rate (e.g., 200Gbps):
-```bash
-./ns3 run Soft-UE -- --packetSize=9000 --numPackets=100000 --maxPdcCount=4096
-```
-
-#### 3. Trace-based Analysis Mode
-Enables detailed packet tracing for performance bottleneck identification:
-```bash
-./ns3 run Soft-UE -- --enableTracing=true --outputDir=./results/
 ```
 
 ---
@@ -181,8 +196,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 For questions, suggestions, or bug reports, please feel free to contact us:
 
-- **Project Email**: softuegroup@gmail.com
-- **GitHub Issues**: [Submit an issue](https://github.com/kaima2022/uec-ns3/issues)
+- **Project Email**: chasermakai@gmail.com
 
 ---
 
@@ -204,6 +218,8 @@ If you find this project useful for your research, please consider citing it in 
 ## License
 
 GPLv2 License. See `LICENSE`.
+
+---
 
 <div align="center">
 
