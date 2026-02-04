@@ -3,6 +3,14 @@
 ## **UE-Sim: End-to-End Ultra Ethernet Simulation Platform**
 
 <div align="center">
+
+[![License](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](LICENSE)
+[![ns--3-3.44](https://img.shields.io/badge/ns--3-3.44-green.svg)](VERSION)
+[![Platform](https://img.shields.io/badge/Platform-Ubuntu%2020.04+-lightgrey.svg)]()
+[![Language](https://img.shields.io/badge/Language-C%2B%2B-orange.svg)]()
+
+
+<div align="center">
   <table>
     <tr>
       <td align="center" width="50%">
@@ -20,13 +28,11 @@
     </tr>
   </table>
 </div>
----
+
 </div>
 
-[![License](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](LICENSE)
-[![ns--3-3.44](https://img.shields.io/badge/ns--3-3.44-green.svg)](VERSION)
-[![Platform](https://img.shields.io/badge/Platform-Ubuntu%2020.04+-lightgrey.svg)]()
-[![Language](https://img.shields.io/badge/Language-C%2B%2B-orange.svg)]()
+
+</div>
 
 ## Table of Contents
 
