@@ -39,6 +39,7 @@
 #include "ns3/internet-module.h"
 #include "ns3/applications-module.h"
 #include "ns3/soft-ue-module.h"
+#include "ns3/soft-ue-packet-tag.h"
 #include "ns3/packet.h"
 #include <iostream>
 #include <iomanip>
@@ -186,14 +187,21 @@ ConceptsDemoApp::SendPacket ()
   if (!packet)
     return;
 
+  uint32_t seq = m_packetsSent + 1;
+  uint16_t pdcId = (m_packetsSent % m_config.maxPdcCount) + 1;
+  bool som = (m_packetsSent == 0);
+  bool eom = (m_packetsSent == m_numPackets - 1);
+
+  NS_LOG_INFO ("[UEC-E2E] [App] ① 应用层 构造包 size=" << m_packetSize << " seq=" << seq);
+
   // ---------- PDS 概念：PDSHeader (pdc_id, seq_num, SOM, EOM) ----------
   PDSHeader pdsHeader;
-  uint16_t pdcId = (m_packetsSent % m_config.maxPdcCount) + 1; // IPDC 段 1..maxPdcCount
   pdsHeader.SetPdcId (pdcId);
-  pdsHeader.SetSequenceNumber (m_packetsSent + 1);
-  pdsHeader.SetSom (m_packetsSent == 0);
-  pdsHeader.SetEom (m_packetsSent == m_numPackets - 1);
+  pdsHeader.SetSequenceNumber (seq);
+  pdsHeader.SetSom (som);
+  pdsHeader.SetEom (eom);
   packet->AddHeader (pdsHeader);
+  NS_LOG_INFO ("[UEC-E2E] [App] ② PDS 头 pdc_id=" << pdcId << " seq=" << seq << " SOM=" << som << " EOM=" << eom);
 
   // ---------- SES 概念：OperationMetadata (OpType, FEP 侧信息, job_id, messages_id) ----------
   Ptr<ExtendedOperationMetadata> extMetadata = Create<ExtendedOperationMetadata> ();
@@ -201,7 +209,7 @@ ConceptsDemoApp::SendPacket ()
   extMetadata->s_pid_on_fep = m_config.clientEndpointId + (m_packetsSent % 100);
   extMetadata->t_pid_on_fep = m_config.serverEndpointId + (m_packetsSent % 100);
   extMetadata->job_id = m_config.baseClientJobId;
-  extMetadata->messages_id = m_packetsSent + 1; // MSN 相关
+  extMetadata->messages_id = seq; // MSN 相关
   extMetadata->payload.start_addr = m_config.baseMemoryAddress + m_packetsSent * 256;
   extMetadata->payload.length = m_packetSize;
   extMetadata->payload.imm_data = 0xCAFEBABE + m_packetsSent;
@@ -212,9 +220,14 @@ ConceptsDemoApp::SendPacket ()
   uint32_t dstNodeId = (srcNodeId == 1) ? 2 : 1;
   extMetadata->SetSourceEndpoint (srcNodeId, m_config.clientEndpointId);
   extMetadata->SetDestinationEndpoint (dstNodeId, m_config.serverEndpointId);
+  NS_LOG_INFO ("[UEC-E2E] [App] ③ SES 元数据 src_node=" << srcNodeId << " dst_node=" << dstNodeId << " job_id=" << m_config.baseClientJobId << " messages_id=" << seq);
 
   // ---------- SES 概念：ProcessSendRequest（验证端点、参与发送路径）----------
   (void) m_sesManager->ProcessSendRequest (extMetadata);
+
+  // 打时间戳，便于接收端统计延迟（PDS 统计中的 Average/Min/Max Latency、Jitter）
+  packet->AddPacketTag (SoftUeTimingTag (Simulator::Now ()));
+  NS_LOG_INFO ("[UEC-E2E] [App] ④ 打时间戳 → 调用 device->Send()");
 
   Ptr<SoftUeNetDevice> device;
   for (uint32_t i = 0; i < GetNode ()->GetNDevices (); ++i)
@@ -244,7 +257,9 @@ ConceptsDemoApp::HandleRead (Ptr<NetDevice> device, Ptr<const Packet> packet,
   Ptr<Packet> copy = packet->Copy ();
   PDSHeader pdsHeader;
   copy->RemoveHeader (pdsHeader);
-  (void) pdsHeader;
+  NS_LOG_INFO ("[UEC-E2E] [App] ⑧ 应用层 收包 seq=" << pdsHeader.GetSequenceNumber ()
+               << " pdc_id=" << pdsHeader.GetPdcId () << " size=" << packet->GetSize ()
+               << " (累计接收 " << m_packetsReceived << " 包)");
 
   return true;
 }
@@ -322,10 +337,15 @@ main (int argc, char* argv[])
   cmd.AddValue ("maxPdcCount", "最大 PDC 数", config.maxPdcCount);
   cmd.Parse (argc, argv);
 
+  // 启用端到端流程关键日志，便于理解全流程（所有 [UEC-E2E] 开头的行）
   LogComponentEnable ("UecE2EConcepts", LOG_LEVEL_INFO);
+  LogComponentEnable ("SesManager", LOG_LEVEL_INFO);
+  LogComponentEnable ("SoftUeNetDevice", LOG_LEVEL_INFO);
+  LogComponentEnable ("SoftUeChannel", LOG_LEVEL_INFO);
 
   std::cout << "\n" << std::string (60, '=') << "\n";
   std::cout << "   UEC 端到端概念实验 (对应 07-UEC端到端概念实验与图解.md)\n";
+  std::cout << "   (下方 [UEC-E2E] 日志为端到端流程关键节点，①②③… 对应 07 文档图解)\n";
   std::cout << std::string (60, '=') << "\n";
   std::cout << "  packetSize=" << config.packetSize
             << " packetCount=" << config.packetCount

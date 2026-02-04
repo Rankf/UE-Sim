@@ -179,7 +179,9 @@ SesManager::ProcessSendRequest (Ptr<ExtendedOperationMetadata> metadata)
     // through device->Send(), so we don't need to create PDS requests that could
     // interfere with the actual packet transmission.
     // For now, just validate the metadata and return success to allow the packet to flow.
-    NS_LOG_INFO ("SES validation successful, allowing packet transmission");
+    NS_LOG_INFO ("[UEC-E2E] [SES] ③ SES 层 ProcessSendRequest: src_node=" << metadata->GetSourceNodeId ()
+                 << " dst_node=" << metadata->GetDestinationNodeId () << " job_id=" << metadata->job_id
+                 << " messages_id=" << metadata->messages_id << " → 校验通过，允许发送");
     m_totalSuccessfulRequests++;
 
     // Reset state machine to idle

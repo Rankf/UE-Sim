@@ -218,7 +218,8 @@
 | **脚本路径** | `scratch/Soft-UE-E2E-Concepts/uec-e2e-concepts.cc` |
 | **编译** | `./ns3 build`（与主项目一起编译） |
 | **运行** | `./ns3 run uec-e2e-concepts`（短名称匹配） |
-| **可选日志** | `NS_LOG="UecE2EConcepts=info:SesManager=info:PdsManager=info" ./ns3 run uec-e2e-concepts` |
+| **端到端流程日志** | 默认已开启，运行后可见所有 `[UEC-E2E]` 开头的关键节点日志（①②③… 对应下图解） |
+| **仅看 E2E 日志** | `grep UEC-E2E` 过滤，或关闭其他：`NS_LOG="UecE2EConcepts=info:SesManager=info:SoftUeNetDevice=info:SoftUeChannel=info" ./ns3 run uec-e2e-concepts` |
 
 若出现 **`Couldn't find the specified program: uec-e2e-concepts`**，说明 ns3 的节目录未包含该可执行文件，需先重新配置再编译：
 
@@ -233,6 +234,41 @@
 ```bash
 ./build/scratch/Soft-UE-E2E-Concepts/ns3.44-uec-e2e-concepts-debug
 ```
+
+### 4.1.1 端到端流程关键日志（[UEC-E2E]）
+
+运行 `./ns3 run uec-e2e-concepts` 后，每个包会按顺序打印下列关键节点，便于对照「二、协议栈与数据流总览」理解全流程：
+
+| 步骤 | 日志前缀 | 含义 |
+|------|----------|------|
+| ① | `[App] ① 应用层 构造包` | 应用创建包、size、seq |
+| ② | `[App] ② PDS 头` | 填 pdc_id, seq, SOM, EOM |
+| ③ | `[App] ③ SES 元数据` | 填 src/dst、job_id、messages_id |
+| ③ | `[SES] ③ SES 层 ProcessSendRequest` | SES 校验通过，允许发送 |
+| ④ | `[App] ④ 打时间戳 → device->Send()` | 打时间戳并交给设备 |
+| ⑤ | `[Device] ⑤ 设备层 Send` | 设备发往信道（FEP→FEP） |
+| ⑤ | `[Channel] ⑤ 信道 Transmit` | 信道转发（经延迟） |
+| ⑥ | `[Channel] ⑥ 信道 ReceivePacket` | 信道送达对端设备 |
+| ⑥ | `[Device] ⑥ 设备层 ReceivePacket` | 设备收包入队 |
+| ⑦ | `[Device] ⑦ 设备层 ProcessReceiveQueue` | 设备递交应用层 |
+| ⑧ | `[App] ⑧ 应用层 收包` | 应用 HandleRead 解析 PDS 头 |
+
+### 4.1.2 如何运行与查看
+
+- **直接运行（默认会打 E2E 日志）**
+  ```bash
+  ./ns3 run uec-e2e-concepts
+  ```
+
+- **只看端到端节点**
+  ```bash
+  ./ns3 run uec-e2e-concepts 2>&1 | grep UEC-E2E
+  ```
+
+- **只看第一个包的完整流程**
+  ```bash
+  ./ns3 run uec-e2e-concepts 2>&1 | grep -A 100 "seq=1 " | head -15
+  ```
 
 ### 4.2 实验覆盖的概念与顺序
 

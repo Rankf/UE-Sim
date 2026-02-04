@@ -3,6 +3,7 @@
 #include "../ses/ses-manager.h"
 #include "../pds/pds-manager.h"
 #include "../pdc/pdc-base.h"
+#include "../common/soft-ue-packet-tag.h"
 #include "ns3/log.h"
 #include "ns3/simulator.h"
 #include "ns3/nstime.h"
@@ -298,7 +299,8 @@ SoftUeNetDevice::Send (Ptr<Packet> packet, const Address& dest, uint16_t protoco
   request.som = true;
   request.eom = true;
 
-  NS_LOG_DEBUG ("SoftUeDevice: Sending packet FEP " << m_localFep << " -> FEP " << destFep);
+  NS_LOG_INFO ("[UEC-E2E] [Device] ⑤ 设备层 Send: FEP " << m_localFep << " → FEP " << destFep
+               << " size=" << packet->GetSize () << " B");
 
   // Send directly through channel (bypass PDS manager for now)
   bool success = false;
@@ -310,7 +312,6 @@ SoftUeNetDevice::Send (Ptr<Packet> packet, const Address& dest, uint16_t protoco
         {
           channel->Transmit (packet, this, m_localFep, destFep);
           success = true;
-          NS_LOG_INFO ("Packet sent directly through channel to FEP " << destFep);
         }
     }
 
@@ -329,6 +330,7 @@ SoftUeNetDevice::Send (Ptr<Packet> packet, const Address& dest, uint16_t protoco
             {
               pdsStats->IncrementSentPackets ();
               pdsStats->RecordBytesSent (packet->GetSize ());
+              pdsStats->IncrementErrors (PdsErrorCode::SUCCESS);
             }
         }
     }
@@ -471,6 +473,9 @@ SoftUeNetDevice::ReceivePacket (Ptr<Packet> packet, uint32_t sourceFep, uint32_t
       return;
     }
 
+  NS_LOG_INFO ("[UEC-E2E] [Device] ⑥ 设备层 ReceivePacket: FEP " << sourceFep << " → FEP " << destFep
+               << " size=" << packet->GetSize () << " B → 入队，待递交应用层");
+
   // Add to receive queue for processing using ns-3 interface
   bool enqueued = m_receiveQueue->Enqueue (packet);
   if (!enqueued)
@@ -485,14 +490,25 @@ SoftUeNetDevice::ReceivePacket (Ptr<Packet> packet, uint32_t sourceFep, uint32_t
   m_statistics.totalBytesReceived += packet->GetSize ();
   m_statistics.lastActivity = Simulator::Now ();
 
-  // Update PDS statistics
+  // Update PDS statistics (with latency when SoftUeTimingTag present)
   if (m_pdsManager && m_pdsManager->IsStatisticsEnabled ())
     {
       Ptr<PdsStatistics> pdsStats = m_pdsManager->GetStatistics ();
       if (pdsStats)
         {
-          pdsStats->IncrementReceivedPackets ();
-          pdsStats->RecordBytesReceived (packet->GetSize ());
+          SoftUeTimingTag timingTag;
+          if (packet->PeekPacketTag (timingTag))
+            {
+              Time sendTime = timingTag.GetTimestamp ();
+              double latencyNs = (Simulator::Now () - sendTime).GetNanoSeconds ();
+              pdsStats->RecordPacketReception (packet->GetSize (), latencyNs);
+            }
+          else
+            {
+              pdsStats->IncrementReceivedPackets ();
+              pdsStats->RecordBytesReceived (packet->GetSize ());
+            }
+          pdsStats->IncrementErrors (PdsErrorCode::SUCCESS);
         }
     }
 
@@ -610,6 +626,7 @@ SoftUeNetDevice::ProcessReceiveQueue (void)
       // Call receive callback if set
       if (!m_receiveCallback.IsNull ())
         {
+          NS_LOG_INFO ("[UEC-E2E] [Device] ⑦ 设备层 ProcessReceiveQueue: 递交应用层 HandleRead");
           m_receiveCallback (this, packet, 0x0800, CreateAddressFromFep (m_localFep));
         }
     }
