@@ -40,3 +40,13 @@ commands
 
 # Terminal Paste Image folder
 .cp-images/
+
+# Local assistant/runtime workspaces
+.ccc/
+.claude/
+
+# Local build artifacts
+CMakeFiles/
+
+# Internal analysis notes
+项目剖析与追踪/
