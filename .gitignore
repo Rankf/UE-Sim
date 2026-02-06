@@ -53,3 +53,5 @@ CMakeFiles/
 
 docs/
 temp/
+benchmarks/
+test.py
