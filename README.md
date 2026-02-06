@@ -6,8 +6,8 @@
 
 [![License](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](LICENSE)
 [![ns--3-3.44](https://img.shields.io/badge/ns--3-3.44-green.svg)](VERSION)
-[![Platform](https://img.shields.io/badge/Platform-Ubuntu%2020.04+-lightgrey.svg)]()
-[![Language](https://img.shields.io/badge/Language-C%2B%2B-orange.svg)]()
+[![Platform](https://img.shields.io/badge/Platform-Ubuntu%2020.04+-lightgrey.svg)](#environment-requirements)
+[![Language](https://img.shields.io/badge/Language-C%2B%2B-orange.svg)](https://isocpp.org/)
 
 
 <div align="center">
@@ -61,9 +61,9 @@ Ultra Ethernet is a specification of new protocols for use over Ethernet network
 
 UE-Sim serves two primary objectives:
 
-- **Network Configuration and Performance Evaluation**: UE-Sim provides a Ultra Ethernet platform for GPU manufacturers, AI computing center operators, and other users. It supports constructing topologies of various scales, configuring parameters, and evaluating network performance under different workloads.
+- **Network Configuration and Performance Evaluation**: UE-Sim provides an Ultra Ethernet simulation platform for GPU manufacturers, AI data center operators, and other users. It supports constructing topologies of various scales, configuring parameters, and evaluating network performance under different workloads.
 
-- **Ultra Ethernet(UE) Specification Optimization**: The platform enables researchers to optimize Ultra Ethernet(UE) Specification through advancing algorithms and protocol validating. 
+- **Ultra Ethernet (UE) Specification Optimization**: The platform enables researchers to optimize the Ultra Ethernet (UE) specification through algorithm innovation and protocol validation.
 
 ---
 
@@ -98,6 +98,8 @@ UE-Sim serves two primary objectives:
 ---
 
 ## Repository Structure
+
+The directory tree below highlights core UE-Sim-related paths and is not exhaustive.
 
 ```
 UE-Sim/
@@ -195,7 +197,7 @@ Check your current GCC version:
 gcc --version
 ```
 
-**If your GCC version is 10.1.0 or higher**, proceed to [Step 3](#step-3-clone-and-configure-UE-Sim).
+**If your GCC version is 10.1.0 or higher**, proceed to [Step 3](#step-3-clone-and-configure-ue-sim).
 
 **If your GCC version is below 10.1.0** (Ubuntu 20.04 default is 9.3.0), upgrade it:
 
@@ -216,8 +218,8 @@ sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10
 
 ```
 # Clone the project
-git clone https://github.com/kaima2022/UE-Sim.git
-cd UE-Sim
+git clone https://github.com/kaima2022/uec-ns3.git
+cd uec-ns3
 
 # Configure ns-3 environment
 ./ns3 configure --enable-examples --enable-tests
