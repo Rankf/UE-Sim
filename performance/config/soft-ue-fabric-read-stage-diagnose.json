@@ -1,0 +1,67 @@
+{
+  "name": "soft-ue-fabric-read-stage-diagnose",
+  "build_before_run": false,
+  "repetitions": 1,
+  "rng_run_base": 2801,
+  "drain_window_seconds": 0.4,
+  "defaults": {
+    "systemScenarioMode": "soft_ue_fabric",
+    "truthExperimentClass": "system_pressure",
+    "truthPlannerMode": "striped",
+    "truthPressureProfile": "mixed",
+    "truthSendPercent": 0,
+    "truthWritePercent": 0,
+    "truthReadPercent": 100,
+    "enableSoftUeObserver": true,
+    "enableSoftUeProtocolLogging": true,
+    "truthProtocolCsvRequired": true,
+    "truthRequireFailureEvidence": true,
+    "nXpus": 3,
+    "portsPerXpu": 2,
+    "portsPerSue": 1,
+    "simulationTime": 0.02,
+    "serverStart": 0.0,
+    "clientStart": 0.0005,
+    "clientStopOffset": 0.002,
+    "serverStopOffset": 0.002,
+    "Mtu": 9000,
+    "PayloadMtu": 8192,
+    "truthPayloadBytes": 32768,
+    "truthFlowCount": 36,
+    "truthOpSpacingNs": 100,
+    "truthRetryTimeoutNs": 160000000,
+    "fabricTopologyMode": "explicit_multipath",
+    "fabricEndpointMode": "six_by_six",
+    "fabricTrafficPattern": "all_to_all",
+    "fabricPathCount": 4,
+    "fabricPathDataRate": "100Gbps",
+    "fabricLinkDelay": "300ns",
+    "fabricUseEcmpHash": true,
+    "fabricEnableEcnObservation": true,
+    "fabricDynamicPathSelection": true
+  },
+  "diagnose_cases": [
+    {
+      "case_name": "response_path_x32__mid",
+      "truthArrivalBlocks": 128,
+      "truthReadTracks": 128,
+      "truthReadResponderMessages": 128,
+      "truthReadResponseBytes": 4194304,
+      "truthOpsPerFlow": 24
+    },
+    {
+      "case_name": "response_path_x32__high",
+      "truthArrivalBlocks": 128,
+      "truthReadTracks": 128,
+      "truthReadResponderMessages": 128,
+      "truthReadResponseBytes": 4194304,
+      "truthOpsPerFlow": 60
+    }
+  ],
+  "outputs": {
+    "summary_csv": "read-stage-diagnose-summary.csv",
+    "comparison_csv": "read-stage-diagnose-comparison.csv",
+    "report_md": "read-stage-diagnose-report.md",
+    "metadata_json": "read-stage-diagnose-metadata.json"
+  }
+}

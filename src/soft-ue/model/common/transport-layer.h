@@ -31,7 +31,9 @@
 #define SOFT_UE_TRANSPORT_LAYER_H
 
 #include <stdint.h>
+#include <array>
 #include <string>
+#include <vector>
 #include <ns3/object.h>
 #include <ns3/packet.h>
 
@@ -191,6 +193,12 @@ enum class NackCode : uint8_t
     PROTOCOL = 0x07          // Protocol error
 };
 
+enum class ValidationStrictness : uint8_t
+{
+    RELAXED = 0x00,
+    STRICT = 0x01,
+};
+
 //=============================================================================
 // Core Data Structures
 //=============================================================================
@@ -201,6 +209,7 @@ enum class NackCode : uint8_t
 struct OperationMetadata
 {
     OpType op_type;                        // Operation type
+    uint8_t delivery_mode;                 // Delivery mode (DeliveryMode enum value)
 
     // Memory region information
     struct {
@@ -225,10 +234,15 @@ struct OperationMetadata
     bool relative;                        // Relative addressing flag
     bool use_optimized_header;            // Optimized header usage flag
     bool has_imm_data;                    // Immediate data presence flag
+    bool som;                             // Start-of-message flag
+    bool eom;                             // End-of-message flag
+    bool expect_response;                 // Semantic response expected
+    bool is_retry;                        // Whole-message retry request flag
 
     // Constructor
     OperationMetadata()
         : op_type(OpType::SEND)
+        , delivery_mode(0)
         , memory({0, false})
         , payload({0, 0, 0})
         , s_pid_on_fep(0)
@@ -239,6 +253,10 @@ struct OperationMetadata
         , relative(false)
         , use_optimized_header(false)
         , has_imm_data(false)
+        , som(true)
+        , eom(true)
+        , expect_response(true)
+        , is_retry(false)
     {}
 };
 
@@ -363,6 +381,319 @@ struct SesPdsResponse
     uint16_t rsp_len;                    // Response length
 };
 
+enum class RequestTerminalReason : uint8_t
+{
+    NONE = 0x00,
+    RC_OK_RESPONSE = 0x01,
+    RC_NO_MATCH_TERMINAL = 0x02,
+    RETRY_EXHAUSTED = 0x03,
+    INVALID_REQUEST = 0x04,
+    PROTOCOL_ERROR = 0x05,
+    RESPONSE_TIMEOUT_EXHAUSTED = 0x06,
+};
+
+struct RequestTerminalProbe
+{
+    bool present{false};
+    bool retry_present{false};
+    bool terminalized{false};
+    RequestTerminalReason reason{RequestTerminalReason::NONE};
+    int64_t terminalized_at_ms{0};
+};
+
+struct RequestTxProbe
+{
+    bool present{false};
+    bool has_tx_pkt_map_entries{false};
+    bool has_tx_pkt_buffer_entries{false};
+    uint32_t oldest_pending_psn{0};
+    uint32_t pending_psn_count{0};
+    bool pending_control_only{false};
+    bool pending_data_only{false};
+    int64_t last_tx_progress_ms{0};
+};
+
+struct UnexpectedSendProbe
+{
+    bool present{false};
+    bool semantic_accepted{false};
+    bool buffered_complete{false};
+    bool matched_to_recv{false};
+    uint32_t chunks_done{0};
+    uint32_t expected_chunks{0};
+    bool completed{false};
+    bool failed{false};
+    int64_t last_activity_ms{0};
+};
+
+struct SendRetryProbe
+{
+    bool present{false};
+    bool waiting_response{false};
+    uint16_t retry_count{0};
+    int64_t next_retry_ms{0};
+    bool timeout_armed{false};
+    bool last_trigger_timeout{false};
+    bool last_trigger_no_match{false};
+    bool exhausted{false};
+};
+
+struct RudResourceStats
+{
+    uint32_t arrival_blocks_in_use{0};
+    uint32_t unexpected_msgs_in_use{0};
+    uint32_t max_unexpected_msgs{0};
+    uint32_t max_unexpected_bytes{0};
+    uint32_t max_arrival_blocks{0};
+    uint32_t max_read_tracks{0};
+    uint32_t unexpected_bytes_in_use{0};
+    uint32_t unexpected_alloc_failures{0};
+    uint32_t arrival_alloc_failures{0};
+    uint32_t read_track_in_use{0};
+    uint32_t read_track_alloc_failures{0};
+    uint32_t stale_cleanup_count{0};
+};
+
+struct RudRuntimeStats
+{
+    static constexpr std::size_t kMaxFabricPaths = 8;
+    uint32_t active_retry_states{0};
+    uint32_t active_read_response_states{0};
+    uint32_t unexpected_buffered_in_use{0};
+    uint32_t unexpected_semantic_accepted_in_use{0};
+    uint32_t unexpected_partial_in_use{0};
+    uint32_t tpdc_inflight_packets{0};
+    uint32_t tpdc_out_of_order_packets{0};
+    uint32_t tpdc_pending_sacks{0};
+    uint32_t tpdc_pending_gap_nacks{0};
+    uint32_t active_tpdc_sessions{0};
+    uint32_t credit_refresh_sent{0};
+    uint32_t ack_ctrl_ext_sent{0};
+    uint32_t credit_gate_blocked{0};
+    uint32_t legacy_credit_gate_blocked{0};
+    uint32_t send_admission_blocked_total{0};
+    uint32_t send_admission_message_limit_blocked_total{0};
+    uint32_t send_admission_byte_limit_blocked_total{0};
+    uint32_t send_admission_both_limit_blocked_total{0};
+    uint32_t write_budget_blocked_total{0};
+    uint32_t read_responder_blocked_total{0};
+    uint32_t transport_window_blocked_total{0};
+    uint32_t send_admission_messages_in_use_peak{0};
+    uint64_t send_admission_bytes_in_use_peak{0};
+    uint32_t write_budget_messages_in_use_peak{0};
+    uint64_t write_budget_bytes_in_use_peak{0};
+    uint32_t read_responder_messages_in_use_peak{0};
+    uint64_t read_response_budget_bytes_in_use_peak{0};
+    uint32_t blocked_queue_push_total{0};
+    uint32_t blocked_queue_wakeup_total{0};
+    uint32_t blocked_queue_dispatch_total{0};
+    uint32_t blocked_queue_depth_max{0};
+    uint32_t blocked_queue_wait_recorded_total{0};
+    uint64_t blocked_queue_wait_total_ns{0};
+    uint64_t blocked_queue_wait_peak_ns{0};
+    uint32_t blocked_queue_wakeup_delay_recorded_total{0};
+    uint64_t blocked_queue_wakeup_delay_total_ns{0};
+    uint64_t blocked_queue_wakeup_delay_peak_ns{0};
+    uint32_t send_admission_release_count{0};
+    uint64_t send_admission_release_bytes_total{0};
+    uint32_t blocked_queue_redispatch_fail_after_wakeup_total{0};
+    uint32_t blocked_queue_redispatch_success_after_wakeup_total{0};
+    uint32_t peer_queue_blocked_total{0};
+    uint32_t pending_response_enqueue_total{0};
+    uint32_t pending_response_retry_total{0};
+    uint32_t pending_response_dispatch_failures_total{0};
+    uint32_t pending_response_success_after_retry_total{0};
+    uint32_t stale_timeout_skipped_total{0};
+    uint32_t stale_retry_skipped_total{0};
+    uint32_t late_response_observed_total{0};
+    uint32_t send_duplicate_ok_after_terminal_total{0};
+    uint32_t send_dispatch_started_total{0};
+    uint32_t send_response_ok_live_total{0};
+    uint32_t send_response_nonok_live_total{0};
+    uint32_t send_response_missing_live_request_total{0};
+    uint32_t send_response_after_terminal_total{0};
+    uint32_t send_timeout_without_response_total{0};
+    uint32_t send_timeout_retry_without_response_progress_total{0};
+    uint32_t sack_sent{0};
+    uint32_t gap_nack_sent{0};
+    uint32_t fabric_path_count{0};
+    uint64_t fabric_total_tx_bytes{0};
+    uint64_t fabric_total_tx_packets{0};
+    uint64_t fabric_ecn_mark_total{0};
+    uint32_t fabric_top_hotspot_endpoint{0};
+    uint32_t fabric_dynamic_routing_enabled{0};
+    uint32_t fabric_dynamic_assignment_total{0};
+    uint32_t fabric_dynamic_path_reuse_total{0};
+    uint32_t fabric_active_flow_assignments_peak{0};
+    uint64_t fabric_path_score_min_ns{0};
+    uint64_t fabric_path_score_max_ns{0};
+    uint64_t fabric_path_score_mean_ns{0};
+    std::array<uint64_t, kMaxFabricPaths> fabric_path_tx_bytes{};
+    std::array<uint32_t, kMaxFabricPaths> fabric_path_queue_depth_max{};
+    std::array<uint32_t, kMaxFabricPaths> fabric_path_queue_depth_mean_milli{};
+    std::array<uint32_t, kMaxFabricPaths> fabric_path_flow_count{};
+};
+
+struct TpdcSessionProgressRecord
+{
+    uint64_t timestamp_ns{0};
+    uint32_t node_id{0};
+    uint32_t if_index{0};
+    uint32_t local_fep{0};
+    uint32_t remote_fep{0};
+    uint16_t pdc_id{0};
+    uint32_t tx_data_packets_total{0};
+    uint32_t tx_control_packets_total{0};
+    uint32_t rx_data_packets_total{0};
+    uint32_t rx_control_packets_total{0};
+    uint32_t ack_sent_total{0};
+    uint32_t ack_received_total{0};
+    uint32_t gap_nack_received_total{0};
+    uint32_t last_ack_sequence{0};
+    uint32_t send_window_base{0};
+    uint32_t next_send_sequence{0};
+    uint32_t send_buffer_size_current{0};
+    uint32_t send_buffer_size_max{0};
+    uint32_t retransmissions_total{0};
+    uint32_t rto_timeouts_total{0};
+    uint32_t ack_advance_events_total{0};
+};
+
+struct ResponseEvent
+{
+    uint64_t job_id{0};
+    uint16_t msg_id{0};
+    uint8_t opcode{0};
+    uint8_t return_code{0};
+    uint32_t modified_length{0};
+    int64_t observed_at_ms{0};
+};
+
+struct SoftUeStats
+{
+    uint64_t totalBytesReceived{0};
+    uint64_t totalBytesTransmitted{0};
+    uint64_t totalPacketsReceived{0};
+    uint64_t totalPacketsTransmitted{0};
+    uint64_t droppedPackets{0};
+    uint64_t activePdcCount{0};
+    double averageLatency{0.0};
+    double throughput{0.0};
+    int64_t lastActivityNs{0};
+};
+
+struct SoftUeSemanticStats
+{
+    uint64_t ops_started_total{0};
+    uint64_t ops_terminal_total{0};
+    uint64_t ops_success_total{0};
+    uint64_t ops_failed_total{0};
+    uint64_t ops_in_flight{0};
+    uint64_t send_started_total{0};
+    uint64_t write_started_total{0};
+    uint64_t read_started_total{0};
+    uint64_t send_success_total{0};
+    uint64_t write_success_total{0};
+    uint64_t read_success_total{0};
+    uint64_t send_success_bytes_total{0};
+    uint64_t write_success_bytes_total{0};
+    uint64_t read_success_bytes_total{0};
+    uint64_t success_latency_samples{0};
+    uint64_t success_latency_mean_ns{0};
+    uint64_t success_latency_max_ns{0};
+};
+
+struct SoftUeDiagnosticRecord
+{
+    uint64_t timestamp_ns{0};
+    uint32_t node_id{0};
+    uint32_t if_index{0};
+    uint32_t local_fep{0};
+    std::string name;
+    std::string detail;
+};
+
+struct SoftUeCompletionRecord
+{
+    uint64_t timestamp_ns{0};
+    uint32_t node_id{0};
+    uint32_t if_index{0};
+    uint32_t local_fep{0};
+    uint64_t job_id{0};
+    uint16_t msg_id{0};
+    uint32_t peer_fep{0};
+    OpType opcode{OpType::SEND};
+    bool success{false};
+    uint8_t return_code{static_cast<uint8_t> (ResponseReturnCode::RC_OK)};
+    std::string failure_domain;
+    RequestTerminalReason terminal_reason{RequestTerminalReason::NONE};
+    uint32_t payload_bytes{0};
+    uint64_t latency_ns{0};
+    uint16_t retry_count{0};
+    bool send_stage_valid{false};
+    uint64_t send_stage_dispatch_ns{0};
+    uint64_t send_stage_dispatch_wait_for_admission_ns{0};
+    uint64_t send_stage_dispatch_after_admission_to_first_send_ns{0};
+    uint64_t send_stage_inflight_ns{0};
+    uint64_t send_stage_receive_consume_ns{0};
+    uint64_t send_stage_closeout_ns{0};
+    uint64_t send_stage_end_to_end_ns{0};
+    uint32_t send_stage_dispatch_attempt_count{0};
+    uint32_t send_stage_dispatch_budget_block_count{0};
+    uint32_t send_stage_blocked_queue_enqueue_count{0};
+    uint32_t send_stage_blocked_queue_redispatch_count{0};
+    uint64_t send_stage_blocked_queue_wait_total_ns{0};
+    uint64_t send_stage_blocked_queue_wait_peak_ns{0};
+    uint32_t send_stage_admission_release_seen_count{0};
+    uint32_t send_stage_blocked_queue_wakeup_count{0};
+    uint32_t send_stage_redispatch_fail_after_wakeup_count{0};
+    uint32_t send_stage_redispatch_success_after_wakeup_count{0};
+    uint64_t send_stage_admission_release_to_wakeup_total_ns{0};
+    uint64_t send_stage_admission_release_to_wakeup_peak_ns{0};
+    uint64_t send_stage_wakeup_to_redispatch_total_ns{0};
+    uint64_t send_stage_wakeup_to_redispatch_peak_ns{0};
+    bool read_stage_valid{false};
+    uint64_t read_stage_responder_budget_generate_ns{0};
+    uint64_t read_stage_first_response_visible_ns{0};
+    uint64_t read_stage_reassembly_complete_ns{0};
+    uint64_t read_stage_terminal_ns{0};
+    uint64_t read_stage_end_to_end_ns{0};
+};
+
+struct SoftUeProtocolSnapshot
+{
+    uint64_t timestamp_ns{0};
+    uint32_t node_id{0};
+    uint32_t if_index{0};
+    uint32_t local_fep{0};
+    SoftUeStats device_stats;
+    SoftUeSemanticStats semantic_stats;
+    RudResourceStats resource_stats;
+    RudRuntimeStats runtime_stats;
+};
+
+struct SoftUeFailureSnapshot
+{
+    uint64_t timestamp_ns{0};
+    uint32_t node_id{0};
+    uint32_t if_index{0};
+    uint32_t local_fep{0};
+    uint64_t job_id{0};
+    uint16_t msg_id{0};
+    uint32_t peer_fep{0};
+    OpType opcode{OpType::SEND};
+    std::string stage;
+    std::string failure_domain;
+    uint8_t return_code{static_cast<uint8_t> (ResponseReturnCode::RC_OK)};
+    RequestTerminalProbe terminal_probe;
+    RequestTxProbe tx_probe;
+    UnexpectedSendProbe unexpected_probe;
+    SendRetryProbe retry_probe;
+    RudResourceStats resource_stats;
+    RudRuntimeStats runtime_stats;
+    std::string diagnostic_text;
+};
+
 //=============================================================================
 // Utility Functions
 //=============================================================================
@@ -379,6 +710,20 @@ inline std::string OperationTypeToString(OpType op)
         case OpType::READ: return "READ";
         case OpType::WRITE: return "WRITE";
         case OpType::DEFERRABLE: return "DEFERRABLE";
+        default: return "UNKNOWN";
+    }
+}
+
+inline std::string RequestTerminalReasonToString(RequestTerminalReason reason)
+{
+    switch (reason) {
+        case RequestTerminalReason::NONE: return "NONE";
+        case RequestTerminalReason::RC_OK_RESPONSE: return "RC_OK_RESPONSE";
+        case RequestTerminalReason::RC_NO_MATCH_TERMINAL: return "RC_NO_MATCH_TERMINAL";
+        case RequestTerminalReason::RETRY_EXHAUSTED: return "RETRY_EXHAUSTED";
+        case RequestTerminalReason::INVALID_REQUEST: return "INVALID_REQUEST";
+        case RequestTerminalReason::PROTOCOL_ERROR: return "PROTOCOL_ERROR";
+        case RequestTerminalReason::RESPONSE_TIMEOUT_EXHAUSTED: return "RESPONSE_TIMEOUT_EXHAUSTED";
         default: return "UNKNOWN";
     }
 }
