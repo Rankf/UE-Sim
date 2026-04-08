@@ -161,11 +161,24 @@ public:
      */
     bool GetEom (void) const;
 
+    /**
+     * @brief Set reliable-transport flag
+     * @param reliable True when this packet belongs to a TPDC session
+     */
+    void SetReliable (bool reliable);
+
+    /**
+     * @brief Get reliable-transport flag
+     * @return true when this packet belongs to a TPDC session
+     */
+    bool IsReliable (void) const;
+
 private:
     uint16_t m_pdcId;        ///< PDC identifier
     uint32_t m_sequenceNum;  ///< Sequence number
     bool m_som;              ///< Start of message flag
     bool m_eom;              ///< End of message flag
+    bool m_reliable;         ///< Whether the owning session is TPDC/reliable
 };
 
 /**

@@ -69,6 +69,156 @@ UE-Sim serves two primary objectives:
 
 - **Ultra Ethernet (UE) Specification Optimization**: The platform enables researchers to optimize the Ultra Ethernet (UE) specification through algorithm innovation and protocol validation.
 
+### Current Soft-UE Validation Status
+
+`src/soft-ue` currently provides a regression-backed semantic model for core RUD behavior, including `SEND expected/unexpected`, `RC_NO_MATCH -> retry`, late duplicate replay, basic `READ/WRITE`, receive-side resource tracking, validation failure classification, and control-pressure style profiles.
+
+What is validated now:
+
+- `rud-semantic-negative-test`
+- `rud-soak-smoke-test`
+- `rud-control-pressure-test --profile=baseline|credit_pressure|lossy|mixed`
+- `soft-ue-bridge-export-test`
+- `soft-ue-observer-test`
+
+What is not yet claimed as complete:
+
+- broader Phase 4 system-level integration beyond the current read-only observer/logging bridge
+- full external trace surface for every protocol-internal event class
+- broader control-plane generalization beyond the currently validated semantic/runtime model
+
+Current system-level bridge status:
+
+- `SoftUeNetDevice` exports read-only protocol/runtime/failure snapshots.
+- `sue-sim-module` can observe those snapshots through `SoftUeObserverHelper` and write protocol CSV logs.
+- The legacy `PointToPointSueNetDevice` path remains separate and is not merged with `soft-ue` protocol semantics in this phase.
+
+System scenario modes:
+
+- `--systemScenarioMode` is required for `SUE-Sim`
+  - there is no implicit default mode
+  - runs that omit it abort immediately instead of silently falling back to legacy mode
+- `scratch/SUE-Sim/SUE-Sim.cc --systemScenarioMode=legacy_sue`
+  - legacy system/link experiment path
+  - not labeled as `soft-ue truth-backed`
+- `scratch/SUE-Sim/SUE-Sim.cc --systemScenarioMode=soft_ue_truth`
+  - truth-backed system scenario path that instantiates one `SoftUeNetDevice` per `(xpu, port)`
+  - auto-installs `SoftUeObserverHelper` by default
+  - writes protocol/failure/diagnostic CSV only when the truth path is active
+  - this is the only system entry that is labeled as `soft-ue truth-backed`
+
+Truth-backed experiment classes:
+
+- `--truthExperimentClass=semantic_demo`
+  - deterministic demo path
+  - covers `SEND`, `WRITE`, `READ`, and an intentional validation failure
+- `--truthExperimentClass=system_smoke`
+  - multi-node, multi-port, multi-flow truth-backed system smoke path
+  - supports `uniform`, `trace`, and `fine-grained` planning
+- `--truthExperimentClass=system_pressure`
+  - truth-backed system pressure path
+  - focuses on traffic plus receive-side resource pressure
+
+Truth-backed system experiment matrix:
+
+- `soft_ue_truth + semantic_demo`
+  - labeled as truth-backed semantic demo
+- `soft_ue_truth + system_smoke`
+  - labeled as truth-backed system smoke
+- `soft_ue_truth + system_pressure`
+  - labeled as truth-backed system pressure
+- any `legacy_sue` run
+  - legacy system scenario only; not truth-backed
+
+Truth-backed benchmark matrix:
+
+- `python3 performance/run-soft-ue-truth-benchmarks.py`
+  - benchmark entry for `soft_ue_truth + system_pressure`
+  - runner hard-enforces `systemScenarioMode=soft_ue_truth` and `truthExperimentClass=system_pressure`
+  - expands `truthPressureProfile x truthFlowCount x truthPayloadBytes x repetition`
+  - consumes protocol/failure/diagnostic CSV from `PerformanceLogger`
+  - writes `benchmark-summary.csv`, `profile-comparison.csv`, and `benchmark-report.md`
+  - `--enforce-long-run-gate` runs `soft-ue-truth-pressure-system-test --long` first and refuses to emit an internal report if any profile fails
+- `python3 performance/run-soft-ue-truth-benchmarks.py --config performance/config/soft-ue-truth-benchmark-matrix-jumbo.json`
+  - focused jumbo benchmark entry for large-payload truth-backed SEND validation
+  - keeps the default `2500`-byte device MTU matrix unchanged
+  - runs with `Mtu=9000` and `PayloadMtu=8192`
+- `python3 performance/run-soft-ue-truth-benchmarks.py --config performance/config/soft-ue-truth-benchmark-matrix-payload4096.json`
+  - focused truth-backed benchmark entry for the UEC `PayloadMtu=4096` profile
+  - uses a legal device MTU large enough to carry the configured payload MTU
+- `python3 performance/run-soft-ue-truth-benchmarks.py --config performance/config/soft-ue-truth-throughput-matrix.json`
+  - throughput-oriented truth-backed matrix
+  - expands `baseline/credit_pressure x payload2048/payload4096/payload8192 x send_only/write_only/read_only`
+  - intended for internal payload-MTU throughput comparison, not for long-run gate enforcement
+- `python3 performance/run-soft-ue-internal-report.py`
+  - standard internal report entry
+  - runs correctness gate (`SEND/WRITE/READ` jumbo tests), long-run gate, then the throughput matrix
+  - emits `internal-performance-report.md`, `benchmark-summary.csv`, `profile-comparison.csv`, `correctness-gate.json`, and `report-metadata.json`
+- `legacy_sue`
+  - excluded from truth-backed benchmark conclusions
+  - not part of the Phase 4.8 KPI/profile comparison path
+
+MTU semantics:
+
+- `Mtu`
+  - device/link MTU in bytes, including headers
+  - this is the value applied to `PointToPointSueNetDevice` and `SoftUeNetDevice`
+- `PayloadMtu`
+  - UEC semantic payload MTU for `soft_ue_truth`
+  - supported values in this phase: `2048`, `4096`, `8192`
+  - used for semantic fragmentation, reassembly, and truth planner multi-chunk decisions
+- semantic header overhead
+  - fixed at `128` bytes for the current model
+  - `PayloadMtu + 128` must fit within device `Mtu`
+- the current default keeps `Mtu=2500`
+- the current default keeps `PayloadMtu=2048`
+- jumbo experiments use `Mtu=9000` with `PayloadMtu=8192`
+- `legacy_sue` ignores `PayloadMtu` in this phase
+
+Benchmark KPI semantics:
+
+- `semantic_goodput_mbps`
+  - internal headline KPI for truth-backed pressure runs
+  - derived from requester-side successful completion payload bytes divided by simulation time
+- `semantic_completion_rate_pct`
+  - requester-side successful completions divided by started operations
+- `terminalization_rate_pct`
+  - requester-side terminalized operations divided by started operations
+- `success_latency_p50_us / p95_us / p99_us`
+  - computed from requester-side successful completion records only
+- `device_tx_egress_mbps`
+  - limited performance conclusion only
+  - derived from sender-side `SoftUeNetDevice.totalBytesTransmitted / simulationTime`
+  - transport-efficiency supporting metric, not semantic goodput
+- `device_rx_observed_mbps`
+  - diagnostic-only
+  - may be zero or under-reported because semantic receive placement can complete in `PDS/SES` without passing through `DeliverReceivedPacket()`
+- control-plane/resource/packet-reliability/failure-domain counters
+  - pressure evidence, not throughput KPIs
+- Internal performance reports additionally require:
+  - `soft_ue_truth + system_pressure`
+  - passing long-run gate across `baseline`, `credit_pressure`, `lossy`, and `mixed`
+- Still not claimed in this phase:
+  - receiver-side observed Mbps as a headline KPI
+  - `legacy_sue` benchmark conclusions
+  - external NIC performance
+
+Example:
+
+```bash
+python3 performance/run-soft-ue-truth-benchmarks.py \
+  --config performance/config/soft-ue-truth-benchmark-matrix.json \
+  --enforce-long-run-gate
+
+python3 performance/run-soft-ue-truth-benchmarks.py \
+  --config performance/config/soft-ue-truth-benchmark-matrix-payload4096.json \
+  --enforce-long-run-gate
+
+python3 performance/run-soft-ue-truth-benchmarks.py \
+  --config performance/config/soft-ue-truth-benchmark-matrix-jumbo.json \
+  --enforce-long-run-gate
+```
+
 ---
 
 ## System Architecture

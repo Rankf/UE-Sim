@@ -35,7 +35,13 @@
 #include "ns3/net-device-container.h"
 #include "ns3/nstime.h"
 #include "ns3/data-rate.h"
+#include "ns3/event-id.h"
+#include "ns3/random-variable-stream.h"
 #include "ns3/traced-callback.h"
+#include "../common/transport-layer.h"
+#include <deque>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace ns3 {
@@ -96,6 +102,12 @@ public:
      * @param devices NetDevice container with devices to connect
      */
     void Connect (NetDeviceContainer devices);
+    void FlushHeldPacket (void);
+    void DropNextRequests (uint32_t count = 1);
+    void DropNextResponses (uint32_t count = 1);
+    void HoldNextResponse (void);
+    void ClearDeterministicFaultPlan (void);
+    void FillFabricRuntimeStats (RudRuntimeStats* stats) const;
 
     // Channel interface implementation
     virtual void SetPropagationDelay (Time delay);
@@ -129,16 +141,83 @@ protected:
     virtual void DoDispose (void) override;
 
 private:
+    struct HeldTransmission
+    {
+        Ptr<Packet> packet;
+        Ptr<NetDevice> dest;
+        uint32_t sourceFep{0};
+        uint32_t destFep{0};
+        Time delay{Seconds (0)};
+    };
+
+    struct PathState
+    {
+        Time nextTxAvailable{Seconds (0)};
+        uint64_t txBytes{0};
+        uint64_t txPackets{0};
+        uint32_t queueDepthMax{0};
+        uint64_t queueDepthSampleTotal{0};
+        uint64_t queueDepthSampleCount{0};
+        uint64_t ecnMarks{0};
+        std::deque<Time> finishTimes;
+        std::unordered_set<uint64_t> flowKeys;
+    };
+
+    struct ScoreSnapshot
+    {
+        uint64_t scoreNs{0};
+        uint32_t queueDepth{0};
+    };
+
     DataRate m_dataRate;                           ///< Channel data rate
+    DataRate m_pathDataRate;                       ///< Explicit fabric per-path data rate
     Time m_delay;                                   ///< Propagation delay
+    Time m_pathDelay;                               ///< Explicit fabric per-path delay
+    Time m_extraDelay;                              ///< Additional injected propagation delay
+    Time m_reorderHoldDelay;                        ///< Automatic flush delay for reordered packet
     std::vector<Ptr<NetDevice>> m_devices;         ///< Connected devices
+    double m_dropProbability;                       ///< Packet drop probability
+    double m_reorderProbability;                    ///< Hold-one-packet reorder probability
+    Ptr<UniformRandomVariable> m_rng;               ///< Random source for channel faults
+    bool m_hasHeldTransmission;                     ///< Whether a held transmission exists
+    HeldTransmission m_heldTransmission;            ///< Deferred packet for reordering
+    uint32_t m_dropNextRequests;                    ///< Deterministic request drops remaining
+    uint32_t m_dropNextResponses;                   ///< Deterministic response drops remaining
+    bool m_holdNextResponse;                        ///< Hold the next response packet once
+    EventId m_heldFlushEvent;                       ///< Automatic release event for held packet
+    bool m_serializeTransmissions;                  ///< Whether all packets share one serialized tx timeline
+    Time m_nextTxAvailable;                         ///< Next time the shared transmitter becomes available
+    uint32_t m_pathCount;                           ///< Explicit fabric path count
+    bool m_useEcmpHash;                             ///< Whether to hash flows across paths
+    bool m_dynamicPathSelection;                    ///< Whether to adaptively assign new flows to less-loaded paths
+    bool m_enableEcnObservation;                    ///< Whether to count ECN-style queue threshold crossings
+    std::vector<PathState> m_pathStates;            ///< Per-path serialized state and counters
+    std::unordered_map<uint64_t, uint32_t> m_flowPathAssignments; ///< Sticky flow-to-path assignments
+    std::unordered_map<uint32_t, uint64_t> m_hotspotBytesByDest; ///< Bytes sent toward each destination FEP
+    uint32_t m_dynamicAssignmentTotal;              ///< Number of new adaptive path assignments
+    uint32_t m_dynamicPathReuseTotal;               ///< Number of packets that reused an existing adaptive assignment
+    uint32_t m_activeFlowAssignmentsPeak;           ///< Peak sticky flow assignment count
+    uint64_t m_pathScoreSampleTotalNs;              ///< Sum of selected path scores for diagnostics
+    uint64_t m_pathScoreSampleCount;                ///< Number of selected path score samples
+    uint64_t m_pathScoreMinNs;                      ///< Minimum selected path score
+    uint64_t m_pathScoreMaxNs;                      ///< Maximum selected path score
 
     void ReceivePacket (Ptr<Packet> packet, Ptr<NetDevice> dest, uint32_t sourceFep,
                        uint32_t destFep);
     void ScheduleReceive (Ptr<Packet> packet, Ptr<NetDevice> dest, uint32_t sourceFep,
                           uint32_t destFep, Time delay);
-    Time CalculateTransmissionTime (Ptr<Packet> packet) const;
+    void ReleaseHeldPacket (Time scheduleDelay);
+    Time CalculateTransmissionTime (Ptr<Packet> packet, const DataRate& dataRate) const;
+    Time CalculateScheduleDelay (Ptr<Packet> packet) const;
+    uint32_t SelectPathIndex (Ptr<Packet> packet, uint32_t sourceFep, uint32_t destFep) const;
+    uint32_t SelectAdaptivePathIndex (Ptr<Packet> packet, uint32_t sourceFep, uint32_t destFep);
+    Time ReserveExplicitPathAndCalculateDelay (Ptr<Packet> packet, uint32_t sourceFep, uint32_t destFep);
+    void EnsurePathStateSize (void);
+    void RefreshPathState (PathState& state, Time now);
+    ScoreSnapshot CapturePathScore (PathState& state, Time now, Time txTime) const;
+    uint64_t BuildFlowKey (Ptr<Packet> packet, uint32_t sourceFep, uint32_t destFep) const;
     uint32_t GetDestinationFepForDevice (Ptr<NetDevice> device) const;
+    bool IsResponsePacket (Ptr<Packet> packet) const;
 };
 
 } // namespace ns3

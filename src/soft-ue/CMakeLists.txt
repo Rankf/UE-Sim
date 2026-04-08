@@ -44,5 +44,41 @@ target_link_libraries(pds-manager-test ${libsoft-ue})
 add_executable(pds-full-test test/pds-full-test.cc)
 target_link_libraries(pds-full-test ${libsoft-ue} ${libnetwork} ${libapplications} ${libinternet} ${libtraffic-control} ${libmobility})
 
+add_executable(rud-semantic-negative-test test/rud-semantic-negative-test.cc)
+target_link_libraries(rud-semantic-negative-test ${libsoft-ue} ${libnetwork} ${libapplications} ${libinternet} ${libtraffic-control} ${libmobility})
+
+add_executable(rud-soak-smoke-test test/rud-soak-smoke-test.cc)
+target_link_libraries(rud-soak-smoke-test ${libsoft-ue} ${libnetwork} ${libapplications} ${libinternet} ${libtraffic-control} ${libmobility})
+
+add_executable(rud-control-pressure-test test/rud-control-pressure-test.cc)
+target_link_libraries(rud-control-pressure-test ${libsoft-ue} ${libnetwork} ${libapplications} ${libinternet} ${libtraffic-control} ${libmobility})
+
+add_executable(rud-jumbo-send-test test/rud-jumbo-send-test.cc)
+target_link_libraries(rud-jumbo-send-test ${libsoft-ue} ${libnetwork} ${libapplications} ${libinternet} ${libtraffic-control} ${libmobility})
+
+add_executable(rud-jumbo-write-test test/rud-jumbo-write-test.cc)
+target_link_libraries(rud-jumbo-write-test ${libsoft-ue} ${libnetwork} ${libapplications} ${libinternet} ${libtraffic-control} ${libmobility})
+
+add_executable(rud-jumbo-read-test test/rud-jumbo-read-test.cc)
+target_link_libraries(rud-jumbo-read-test ${libsoft-ue} ${libnetwork} ${libapplications} ${libinternet} ${libtraffic-control} ${libmobility})
+
+add_executable(soft-ue-bridge-export-test test/soft-ue-bridge-export-test.cc)
+target_link_libraries(soft-ue-bridge-export-test ${libsoft-ue} ${libnetwork} ${libapplications} ${libinternet} ${libtraffic-control} ${libmobility})
+
+add_executable(soft-ue-channel-rate-test test/soft-ue-channel-rate-test.cc)
+target_link_libraries(soft-ue-channel-rate-test ${libsoft-ue} ${libnetwork} ${libapplications} ${libinternet} ${libtraffic-control} ${libmobility})
+
 # Install test targets
-install(TARGETS ses-manager-test pds-manager-test pds-full-test DESTINATION bin)
+install(TARGETS
+  ses-manager-test
+  pds-manager-test
+  pds-full-test
+  rud-semantic-negative-test
+  rud-soak-smoke-test
+  rud-control-pressure-test
+  rud-jumbo-send-test
+  rud-jumbo-write-test
+  rud-jumbo-read-test
+  soft-ue-bridge-export-test
+  soft-ue-channel-rate-test
+  DESTINATION bin)

@@ -20,6 +20,7 @@
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
 #include "ns3/internet-module.h"
+#include "ns3/soft-ue-module.h"
 #include "ns3/sue-sim-module-module.h"
 #include "ns3/sue-client.h"
 #include "../sue-utils.h"
@@ -33,6 +34,8 @@ namespace ns3 {
 NS_LOG_COMPONENT_DEFINE ("TopologyBuilder");
 
 TopologyBuilder::TopologyBuilder ()
+  : m_hasSoftUeTruthPath (false),
+    m_hasSoftUeFabricPath (false)
 {
 }
 
@@ -45,11 +48,32 @@ TopologyBuilder::BuildTopology (const SueSimulationConfig& config)
 {
     NS_LOG_INFO ("Building network topology");
 
+    m_hasSoftUeTruthPath = (config.systemScenarioMode == "soft_ue_truth" ||
+                            config.systemScenarioMode == "soft_ue_fabric");
+    m_hasSoftUeFabricPath = (config.systemScenarioMode == "soft_ue_fabric");
+    m_xpuNodes = NodeContainer ();
+    m_switchNodes = NodeContainer ();
+    m_xpuDevices.clear ();
+    m_switchDevices.clear ();
+    m_xpuPortIps.clear ();
+    m_serverInfos.clear ();
+    m_xpuMacAddresses.clear ();
+    m_softUeDevices = NetDeviceContainer ();
+    m_softUeDeviceMatrix.clear ();
+    m_ipToMacMap.clear ();
+
     CreateNodes (config);
     InstallNetworkStack (config);
-    ConfigurePointToPointHelper (config);
-    CreateConnections (config);
-    BuildForwardingTables (config);
+    if (m_hasSoftUeTruthPath)
+    {
+        CreateSoftUeTruthConnections (config);
+    }
+    else
+    {
+        ConfigurePointToPointHelper (config);
+        CreateConnections (config);
+        BuildForwardingTables (config);
+    }
     PrintTopologyInfo (config);
 
     NS_LOG_INFO ("Network topology build completed");
@@ -59,13 +83,17 @@ void
 TopologyBuilder::CreateNodes (const SueSimulationConfig& config)
 {
     uint32_t nXpus = config.network.nXpus;
+    if (m_hasSoftUeFabricPath && config.fabricEndpointMode == "six_by_six")
+    {
+        nXpus *= 2u;
+    }
     uint32_t suesPerXpu = config.network.suesPerXpu;
 
     // Create XPU nodes
     m_xpuNodes.Create(nXpus);
 
-    // Create switch nodes - now based on SUE count
-    uint32_t totalSwitches = suesPerXpu;  // Number of switches = number of SUEs per XPU
+    // Create switch nodes only for the legacy SUE path.
+    uint32_t totalSwitches = m_hasSoftUeTruthPath ? 0 : suesPerXpu;
     m_switchNodes.Create(totalSwitches);
 
     // Print XPU node IDs (base 1)
@@ -78,9 +106,16 @@ TopologyBuilder::CreateNodes (const SueSimulationConfig& config)
 
     // Print switch node IDs (base 1)
     std::cout << "Switch Node IDs: ";
-    for (uint32_t i = 0; i < m_switchNodes.GetN(); ++i) {
-        std::cout << m_switchNodes.Get(i)->GetId() + 1;
-        if (i != m_switchNodes.GetN() - 1) std::cout << ", ";
+    if (m_switchNodes.GetN() == 0)
+    {
+        std::cout << "(none in " << config.systemScenarioMode << ")";
+    }
+    else
+    {
+        for (uint32_t i = 0; i < m_switchNodes.GetN(); ++i) {
+            std::cout << m_switchNodes.Get(i)->GetId() + 1;
+            if (i != m_switchNodes.GetN() - 1) std::cout << ", ";
+        }
     }
     std::cout << std::endl;
 }
@@ -91,7 +126,10 @@ TopologyBuilder::InstallNetworkStack (const SueSimulationConfig& config)
     // Install network protocol stack
     InternetStackHelper stack;
     stack.Install(m_xpuNodes);
-    stack.Install(m_switchNodes);
+    if (m_switchNodes.GetN () > 0)
+    {
+        stack.Install(m_switchNodes);
+    }
 }
 
 void
@@ -200,6 +238,119 @@ TopologyBuilder::CreateConnections (const SueSimulationConfig& config)
     // Set global IP-MAC mapping table to SueClient and PointToPointSueNetDevice
     SueClient::SetGlobalIpMacMap(m_ipToMacMap);
     SuePacketUtils::SetGlobalIpMacMap(m_ipToMacMap);
+}
+
+void
+TopologyBuilder::CreateSoftUeTruthConnections (const SueSimulationConfig& config)
+{
+    NS_ABORT_MSG_IF (config.network.nXpus < 2,
+                     "soft_ue_truth mode requires at least two XPU nodes");
+    NS_ABORT_MSG_IF (config.network.portsPerXpu == 0,
+                     "soft_ue_truth mode requires at least one port per XPU");
+
+    SoftUeHelper helper;
+    helper.SetDeviceAttribute ("MaxPacketSize", UintegerValue (config.traffic.Mtu));
+    helper.SetPayloadMtu (config.traffic.PayloadMtu);
+    helper.SetDebugSnapshotsEnabled (true);
+    helper.SetAuthorizeAllJobs (true);
+    helper.SetValidationStrictness (ValidationStrictness::STRICT);
+    helper.SetChannelAttribute ("DataRate", DataRateValue (DataRate (config.truthLinkDataRate)));
+    helper.SetChannelAttribute ("SerializeTransmissions",
+                                BooleanValue (config.systemScenarioMode == "soft_ue_truth" ||
+                                              config.fabricTopologyMode == "shared_truth"));
+    if (config.systemScenarioMode == "soft_ue_fabric" && config.fabricTopologyMode == "explicit_multipath")
+    {
+        helper.SetChannelAttribute ("PathCount", UintegerValue (config.fabricPathCount));
+        helper.SetChannelAttribute ("PathDataRate", DataRateValue (DataRate (config.fabricPathDataRate)));
+        helper.SetChannelAttribute ("PathDelay",
+                                    TimeValue (SueStringUtils::ParseTimeIntervalString (config.fabricLinkDelay)));
+        helper.SetChannelAttribute ("UseEcmpHash", BooleanValue (config.fabricUseEcmpHash));
+        helper.SetChannelAttribute ("DynamicPathSelection", BooleanValue (config.fabricDynamicPathSelection));
+        helper.SetChannelAttribute ("EnableEcnObservation", BooleanValue (config.fabricEnableEcnObservation));
+    }
+    helper.ConfigureUnexpectedResources (config.truthUnexpectedMessages,
+                                         config.truthUnexpectedBytes,
+                                         config.truthArrivalBlocks);
+    helper.ConfigureArrivalTracking (config.truthArrivalBlocks, config.truthReadTracks);
+    helper.ConfigureSemanticBudgets (config.truthSendAdmissionMessages,
+                                     config.truthSendAdmissionBytes,
+                                     config.truthWriteBudgetMessages,
+                                     config.truthWriteBudgetBytes,
+                                     config.truthReadResponderMessages,
+                                     config.truthReadResponseBytes);
+    if (config.truthRetryTimeoutNs > 0)
+    {
+        helper.ConfigureRetry (true, NanoSeconds (config.truthRetryTimeoutNs));
+    }
+    if (config.truthExperimentClass == "system_pressure")
+    {
+        const bool lossyProfile =
+            (config.truthPressureProfile == "lossy" || config.truthPressureProfile == "mixed");
+        helper.SetCreditGateEnabled (true);
+        helper.SetAckControlEnabled (true);
+        helper.SetCreditRefreshInterval (NanoSeconds (config.truthCreditRefreshIntervalNs));
+        helper.SetInitialCredits (config.truthInitialCredits);
+        if (config.truthPressureProfile == "credit_pressure" ||
+            config.truthPressureProfile == "lossy" ||
+            config.truthPressureProfile == "mixed")
+        {
+            if (config.truthRetryTimeoutNs == 0)
+            {
+                helper.ConfigureRetry (true, MilliSeconds (16));
+            }
+        }
+        helper.SetChannelAttribute ("DropProbability", DoubleValue (config.truthDropRate));
+        helper.SetChannelAttribute ("ReorderProbability", DoubleValue (lossyProfile ? 0.35 : 0.0));
+        helper.SetChannelAttribute ("ReorderHoldDelay", TimeValue (NanoSeconds (config.truthReorderWindowNs)));
+        helper.SetChannelAttribute ("ExtraDelay", TimeValue (NanoSeconds (config.truthExtraDelayNs)));
+    }
+
+    NodeContainer truthNodes;
+    const uint32_t truthRows =
+        (config.systemScenarioMode == "soft_ue_fabric" && config.fabricEndpointMode == "six_by_six")
+            ? (config.network.nXpus * 2u)
+            : config.network.nXpus;
+    for (uint32_t xpuIdx = 0; xpuIdx < truthRows; ++xpuIdx)
+    {
+        for (uint32_t portIdx = 0; portIdx < config.network.portsPerXpu; ++portIdx)
+        {
+            truthNodes.Add (m_xpuNodes.Get (xpuIdx));
+        }
+    }
+    m_softUeDevices = helper.Install (truthNodes);
+
+    m_xpuDevices.resize (truthRows);
+    m_softUeDeviceMatrix.resize (truthRows);
+    m_xpuMacAddresses.resize (truthRows);
+
+    const uint32_t expectedDevices = truthRows * config.network.portsPerXpu;
+    NS_ABORT_MSG_UNLESS (m_softUeDevices.GetN () == expectedDevices,
+                         "soft_ue_truth mode expected " << expectedDevices
+                         << " devices but created " << m_softUeDevices.GetN ());
+
+    uint32_t deviceIndex = 0;
+    for (uint32_t xpuIdx = 0; xpuIdx < truthRows; ++xpuIdx)
+    {
+        for (uint32_t portIdx = 0; portIdx < config.network.portsPerXpu; ++portIdx, ++deviceIndex)
+        {
+            Ptr<SoftUeNetDevice> device = DynamicCast<SoftUeNetDevice> (m_softUeDevices.Get (deviceIndex));
+            NS_ABORT_MSG_UNLESS (device != nullptr,
+                                 "soft_ue_truth mode failed to create SoftUeNetDevice for XPU "
+                                     << xpuIdx << " port " << portIdx);
+            m_xpuDevices[xpuIdx].push_back (device);
+            m_softUeDeviceMatrix[xpuIdx].push_back (device);
+            m_xpuMacAddresses[xpuIdx].push_back (Mac48Address::ConvertFrom (device->GetAddress ()));
+            NS_LOG_INFO ("Connected XPU" << (xpuIdx + 1)
+                         << " port " << (portIdx + 1)
+                         << " to "
+                         << (m_hasSoftUeFabricPath ? "explicit soft-ue fabric" : "shared soft-ue truth fabric")
+                         << " with FEP "
+                         << device->GetLocalFep ());
+        }
+        NS_ABORT_MSG_UNLESS (m_softUeDeviceMatrix[xpuIdx].size () == config.network.portsPerXpu,
+                             "soft_ue_truth mode failed to populate every port for XPU "
+                                 << xpuIdx);
+    }
 }
 
 void
@@ -312,6 +463,30 @@ TopologyBuilder::BuildForwardingTables (const SueSimulationConfig& config)
 void
 TopologyBuilder::PrintTopologyInfo (const SueSimulationConfig& config) const
 {
+    if (m_hasSoftUeTruthPath)
+    {
+        std::cout << "\nsoft_ue_truth topology summary:" << std::endl;
+        std::cout << "-------------------------------" << std::endl;
+        std::cout << "Scenario mode: " << config.systemScenarioMode << std::endl;
+        std::cout << "Truth experiment class: " << config.truthExperimentClass << std::endl;
+        std::cout << "Soft-UE devices: " << m_softUeDevices.GetN () << std::endl;
+        for (uint32_t xpuIdx = 0; xpuIdx < m_softUeDeviceMatrix.size (); ++xpuIdx)
+        {
+            for (uint32_t portIdx = 0; portIdx < m_softUeDeviceMatrix[xpuIdx].size (); ++portIdx)
+            {
+                Ptr<SoftUeNetDevice> device = m_softUeDeviceMatrix[xpuIdx][portIdx];
+                std::cout << "  XPU" << (xpuIdx + 1)
+                          << " port[" << portIdx << "]"
+                          << " ifIndex=" << device->GetIfIndex ()
+                          << " fep=" << device->GetLocalFep ()
+                          << " mac=" << device->GetAddress () << std::endl;
+            }
+        }
+        std::cout << "This topology is soft-ue truth-backed and does not instantiate legacy SUE"
+                  << " switches/forwarding tables in this mode." << std::endl;
+        return;
+    }
+
     // IP to MAC Mapping Table
     std::cout << "\nIP to MAC Mapping Table:" << std::endl;
     for (const auto& entry : m_ipToMacMap) {
@@ -372,6 +547,40 @@ TopologyBuilder::PrintTopologyInfo (const SueSimulationConfig& config) const
                     << std::endl;
         }
     }
+}
+
+bool
+TopologyBuilder::HasSoftUeTruthPath () const
+{
+  return m_hasSoftUeTruthPath;
+}
+
+bool
+TopologyBuilder::HasSoftUeFabricPath () const
+{
+  return m_hasSoftUeFabricPath;
+}
+
+const NetDeviceContainer&
+TopologyBuilder::GetSoftUeDevices () const
+{
+    return m_softUeDevices;
+}
+
+const std::vector<std::vector<Ptr<SoftUeNetDevice>>>&
+TopologyBuilder::GetSoftUeDeviceMatrix () const
+{
+    return m_softUeDeviceMatrix;
+}
+
+Ptr<SoftUeNetDevice>
+TopologyBuilder::GetTruthDevice (uint32_t xpuIdx, uint32_t portIdx) const
+{
+    if (xpuIdx >= m_softUeDeviceMatrix.size () || portIdx >= m_softUeDeviceMatrix[xpuIdx].size ())
+    {
+        return nullptr;
+    }
+    return m_softUeDeviceMatrix[xpuIdx][portIdx];
 }
 
 NodeContainer*

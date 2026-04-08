@@ -351,6 +351,7 @@ PdcBase::CreatePdsHeader (Ptr<Packet> packet, bool som, bool eom) const
   header.SetSequenceNumber (m_config.sequenceNumber);
   header.SetSom (som);
   header.SetEom (eom);
+  header.SetReliable (GetPdcType () == PdcType::TPDC);
 
   return header;
 }

@@ -24,6 +24,7 @@
 #include <fstream>
 #include <string>
 #include "ns3/nstime.h"
+#include "ns3/soft-ue-module.h"
 
 namespace ns3 {
 
@@ -260,6 +261,19 @@ public:
    */
   void LogAppLayerTx (uint64_t timeNs, uint32_t nodeId, uint8_t vcId, uint32_t packetSize);
 
+  void LogSoftUeProtocolSnapshot (const SoftUeProtocolSnapshot& snapshot);
+  void LogSoftUeCompletion (const SoftUeCompletionRecord& record);
+  void LogSoftUeFailure (const SoftUeFailureSnapshot& snapshot);
+  void LogSoftUeDiagnostic (const SoftUeDiagnosticRecord& record);
+  void LogSoftUeTpdcSessionProgress (const TpdcSessionProgressRecord& record);
+
+  bool IsInitialized () const;
+  std::string GetSoftUeProtocolLogPath () const;
+  std::string GetSoftUeCompletionLogPath () const;
+  std::string GetSoftUeFailureLogPath () const;
+  std::string GetSoftUeDiagnosticLogPath () const;
+  std::string GetSoftUeTpdcSessionProgressLogPath () const;
+
   
   /**
    * \brief Buffer queue change trace callback
@@ -270,6 +284,7 @@ public:
   void BufferQueueChangeTraceCallback (uint32_t bufferSize, uint32_t xpuId);
 
 private:
+  void EnsureSoftUeLogsOpen ();
   /**
    * \brief Private constructor for singleton pattern
    */
@@ -327,6 +342,17 @@ private:
 
   // Application layer transmission monitoring log file
   std::ofstream m_appLayerTxLog;           //!< Application layer transmission statistics log file stream
+  std::ofstream m_softUeProtocolLog;       //!< Soft-UE protocol snapshot log file stream
+  std::ofstream m_softUeCompletionLog;     //!< Soft-UE completion log file stream
+  std::ofstream m_softUeFailureLog;        //!< Soft-UE failure log file stream
+  std::ofstream m_softUeDiagnosticLog;     //!< Soft-UE diagnostic log file stream
+  std::ofstream m_softUeTpdcSessionProgressLog; //!< Soft-UE TPDC session progress log file stream
+  std::string m_softUeProtocolLogPath;     //!< Soft-UE protocol snapshot log path
+  std::string m_softUeCompletionLogPath;   //!< Soft-UE completion log path
+  std::string m_softUeFailureLogPath;      //!< Soft-UE failure log path
+  std::string m_softUeDiagnosticLogPath;   //!< Soft-UE diagnostic log path
+  std::string m_softUeTpdcSessionProgressLogPath; //!< Soft-UE TPDC session progress log path
+  std::string m_logTimestamp;              //!< Shared timestamp suffix for lazily-created logs
 };
 
 } // namespace ns3

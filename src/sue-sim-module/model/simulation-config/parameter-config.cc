@@ -17,6 +17,7 @@
  */
 
 #include "parameter-config.h"
+#include "../sue-utils.h"
 #include "ns3/core-module.h"
 #include <iostream>
 #include <iomanip>
@@ -24,6 +25,19 @@
 namespace ns3 {
 
 NS_LOG_COMPONENT_DEFINE ("ParameterConfig");
+
+namespace {
+
+constexpr uint32_t kSoftUeSemanticHeaderOverheadBytes = 128;
+constexpr uint32_t kDefaultSoftUePayloadMtu = 2048;
+
+bool
+IsSupportedPayloadMtu (uint32_t payloadMtu)
+{
+    return payloadMtu == 2048u || payloadMtu == 4096u || payloadMtu == 8192u;
+}
+
+} // namespace
 
 SueSimulationConfig::SueSimulationConfig ()
 {
@@ -45,6 +59,7 @@ SueSimulationConfig::SueSimulationConfig ()
     traffic.transactionSize = 256;
     traffic.maxBurstSize = 2048;
     traffic.Mtu = 2500;
+    traffic.PayloadMtu = kDefaultSoftUePayloadMtu;
     traffic.vcNum = 4;
     traffic.threadRate = 3500000;
     traffic.totalBytesToSend = 50;
@@ -122,6 +137,47 @@ SueSimulationConfig::SueSimulationConfig ()
     // Initialize logging configuration
     logging.logLevel = "LOG_LEVEL_INFO";
     logging.enableAllComponents = true;
+    systemScenarioMode.clear ();
+    truthExperimentClass = "semantic_demo";
+    truthPlannerMode.clear ();
+    enableSoftUeObserver = true;
+    enableSoftUeProtocolLogging = true;
+    truthFlowCount = 0;
+    truthOpsPerFlow = 0;
+    truthPressureProfile = "baseline";
+    truthSendPercent = 40;
+    truthWritePercent = 30;
+    truthReadPercent = 30;
+    truthPayloadBytes = 0;
+    truthUnexpectedMessages = 0;
+    truthUnexpectedBytes = 0;
+    truthArrivalBlocks = 0;
+    truthReadTracks = 0;
+    truthDropRate = 0.0;
+    truthReorderWindowNs = 0;
+    truthExtraDelayNs = 0;
+    truthLinkDataRate = "1Gbps";
+    truthOpSpacingNs = 0;
+    truthInitialCredits = 0;
+    truthCreditRefreshIntervalNs = 0;
+    truthSendAdmissionMessages = 0;
+    truthSendAdmissionBytes = 0;
+    truthWriteBudgetMessages = 0;
+    truthWriteBudgetBytes = 0;
+    truthReadResponderMessages = 0;
+    truthReadResponseBytes = 0;
+    truthRetryTimeoutNs = 0;
+    truthRequireFailureEvidence = false;
+    truthProtocolCsvRequired = true;
+    fabricTopologyMode = "explicit_multipath";
+    fabricEndpointMode = "six_endpoint";
+    fabricPathCount = 4;
+    fabricPathDataRate = "100Gbps";
+    fabricLinkDelay = "10ns";
+    fabricUseEcmpHash = true;
+    fabricDynamicPathSelection = false;
+    fabricEnableEcnObservation = true;
+    fabricTrafficPattern = "all_to_all";
 
 }
 
@@ -148,7 +204,8 @@ SueSimulationConfig::ParseCommandLine (int argc, char* argv[])
     // Traffic generation parameters
     cmd.AddValue("transactionSize", "Size per transaction in bytes", traffic.transactionSize);
     cmd.AddValue("maxBurstSize", "Maximum burst size in bytes", traffic.maxBurstSize);
-    cmd.AddValue("Mtu", "Maximum Transmission Unit in bytes", traffic.Mtu);
+    cmd.AddValue("Mtu", "Device/link MTU in bytes (includes headers)", traffic.Mtu);
+    cmd.AddValue("PayloadMtu", "UEC payload MTU for soft_ue_truth (2048/4096/8192)", traffic.PayloadMtu);
     cmd.AddValue("vcNum", "Number of virtual channels at application layer", traffic.vcNum);
     cmd.AddValue("enableTraceMode", "Enable trace-based traffic generation", traffic.enableTraceMode);
     cmd.AddValue("traceFilePath", "Path to trace file for trace-based generation", traffic.traceFilePath);
@@ -227,6 +284,47 @@ SueSimulationConfig::ParseCommandLine (int argc, char* argv[])
     // Logging configuration parameters
     cmd.AddValue("logLevel", "Log level for all components (LOG_LEVEL_DEBUG, LOG_LEVEL_INFO, LOG_LEVEL_WARN, LOG_LEVEL_ERROR, LOG_LEVEL_FUNCTION, LOG_LEVEL_LOGIC, LOG_LEVEL_ALL)", logging.logLevel);
     cmd.AddValue("enableAllComponents", "Enable logging for all SUE simulation components", logging.enableAllComponents);
+    cmd.AddValue("systemScenarioMode", "Required system scenario mode: legacy_sue, soft_ue_truth, or soft_ue_fabric", systemScenarioMode);
+    cmd.AddValue("truthExperimentClass", "Truth-backed experiment class: semantic_demo, system_smoke, or system_pressure", truthExperimentClass);
+    cmd.AddValue("truthPlannerMode", "Optional truth planner override for soft_ue_truth: uniform or striped", truthPlannerMode);
+    cmd.AddValue("enableSoftUeObserver", "Enable SoftUeObserverHelper for soft_ue_truth scenarios", enableSoftUeObserver);
+    cmd.AddValue("enableSoftUeProtocolLogging", "Enable soft-ue protocol/failure/diagnostic CSV logging", enableSoftUeProtocolLogging);
+    cmd.AddValue("truthFlowCount", "Maximum number of flows for uniform truth planner", truthFlowCount);
+    cmd.AddValue("truthOpsPerFlow", "Operations per truth planner flow", truthOpsPerFlow);
+    cmd.AddValue("truthPressureProfile", "Truth-backed pressure profile: baseline, credit_pressure, lossy, or mixed", truthPressureProfile);
+    cmd.AddValue("truthSendPercent", "SEND percentage for truth-generated operations", truthSendPercent);
+    cmd.AddValue("truthWritePercent", "WRITE percentage for truth-generated operations", truthWritePercent);
+    cmd.AddValue("truthReadPercent", "READ percentage for truth-generated operations", truthReadPercent);
+    cmd.AddValue("truthPayloadBytes", "Payload size for generated truth operations (0 uses transactionSize)", truthPayloadBytes);
+    cmd.AddValue("truthUnexpectedMessages", "Truth-path unexpected message pool size", truthUnexpectedMessages);
+    cmd.AddValue("truthUnexpectedBytes", "Truth-path unexpected byte pool size", truthUnexpectedBytes);
+    cmd.AddValue("truthArrivalBlocks", "Truth-path arrival tracking capacity", truthArrivalBlocks);
+    cmd.AddValue("truthReadTracks", "Truth-path read response track capacity", truthReadTracks);
+    cmd.AddValue("truthDropRate", "Truth-path packet drop probability for pressure profiles", truthDropRate);
+    cmd.AddValue("truthReorderWindowNs", "Truth-path reorder hold window in nanoseconds", truthReorderWindowNs);
+    cmd.AddValue("truthExtraDelayNs", "Truth-path extra link delay in nanoseconds", truthExtraDelayNs);
+    cmd.AddValue("truthLinkDataRate", "Truth-path shared fabric data rate", truthLinkDataRate);
+    cmd.AddValue("truthOpSpacingNs", "Truth-path generated operation spacing in nanoseconds (0 uses profile default)", truthOpSpacingNs);
+    cmd.AddValue("truthInitialCredits", "Truth-path initial credits per peer (0 uses soft-ue default)", truthInitialCredits);
+    cmd.AddValue("truthCreditRefreshIntervalNs", "Truth-path credit refresh interval in nanoseconds (0 uses soft-ue default)", truthCreditRefreshIntervalNs);
+    cmd.AddValue("truthSendAdmissionMessages", "Truth-path SEND admission message budget", truthSendAdmissionMessages);
+    cmd.AddValue("truthSendAdmissionBytes", "Truth-path SEND admission byte budget", truthSendAdmissionBytes);
+    cmd.AddValue("truthWriteBudgetMessages", "Truth-path WRITE target budget message limit", truthWriteBudgetMessages);
+    cmd.AddValue("truthWriteBudgetBytes", "Truth-path WRITE target budget byte limit", truthWriteBudgetBytes);
+    cmd.AddValue("truthReadResponderMessages", "Truth-path READ responder message budget", truthReadResponderMessages);
+    cmd.AddValue("truthReadResponseBytes", "Truth-path READ response byte budget", truthReadResponseBytes);
+    cmd.AddValue("truthRetryTimeoutNs", "Truth-path semantic retry timeout in nanoseconds (0 uses soft-ue default)", truthRetryTimeoutNs);
+    cmd.AddValue("truthRequireFailureEvidence", "Require truth system_pressure profiles to surface pressure evidence", truthRequireFailureEvidence);
+    cmd.AddValue("truthProtocolCsvRequired", "Require truth path to emit protocol CSV rows", truthProtocolCsvRequired);
+    cmd.AddValue("fabricTopologyMode", "Fabric topology mode for soft_ue_fabric: shared_truth or explicit_multipath", fabricTopologyMode);
+    cmd.AddValue("fabricEndpointMode", "Fabric endpoint layout for soft_ue_fabric: six_endpoint or six_by_six", fabricEndpointMode);
+    cmd.AddValue("fabricPathCount", "Explicit multipath fabric path count", fabricPathCount);
+    cmd.AddValue("fabricPathDataRate", "Explicit multipath fabric per-path data rate", fabricPathDataRate);
+    cmd.AddValue("fabricLinkDelay", "Explicit multipath fabric per-path link delay", fabricLinkDelay);
+    cmd.AddValue("fabricUseEcmpHash", "Enable stable ECMP hashing for explicit multipath fabric", fabricUseEcmpHash);
+    cmd.AddValue("fabricDynamicPathSelection", "Enable adaptive sticky per-flow path selection for explicit multipath fabric", fabricDynamicPathSelection);
+    cmd.AddValue("fabricEnableEcnObservation", "Enable ECN-style observation counters for explicit multipath fabric", fabricEnableEcnObservation);
+    cmd.AddValue("fabricTrafficPattern", "Fabric traffic pattern for soft_ue_fabric: all_to_all, hotspot, or incast", fabricTrafficPattern);
 
     cmd.Parse(argc, argv);
 }
@@ -249,9 +347,214 @@ SueSimulationConfig::ValidateAndCalculate ()
     if (loadBalance.loadBalanceAlgorithm > 5) {
         NS_ABORT_MSG("loadBalanceAlgorithm must be 0-5 (0=SIMPLE_MOD, 1=MOD_WITH_SEED, 2=PRIME_HASH, 3=ENHANCED_HASH, 4=ROUND_ROBIN, 5=CONSISTENT_HASH). Current value: " << loadBalance.loadBalanceAlgorithm);
     }
+    if (systemScenarioMode.empty ())
+    {
+        NS_ABORT_MSG ("systemScenarioMode is required. Pass --systemScenarioMode=soft_ue_truth or "
+                      "--systemScenarioMode=legacy_sue.");
+    }
+    if (systemScenarioMode != "legacy_sue" &&
+        systemScenarioMode != "soft_ue_truth" &&
+        systemScenarioMode != "soft_ue_fabric")
+    {
+        NS_ABORT_MSG ("systemScenarioMode must be legacy_sue, soft_ue_truth, or soft_ue_fabric. Current value: "
+                      << systemScenarioMode);
+    }
+    if (truthExperimentClass != "semantic_demo" &&
+        truthExperimentClass != "system_smoke" &&
+        truthExperimentClass != "system_pressure")
+    {
+        NS_ABORT_MSG ("truthExperimentClass must be semantic_demo, system_smoke, or system_pressure. Current value: "
+                      << truthExperimentClass);
+    }
+    if (truthPressureProfile != "baseline" &&
+        truthPressureProfile != "credit_pressure" &&
+        truthPressureProfile != "lossy" &&
+        truthPressureProfile != "mixed")
+    {
+        NS_ABORT_MSG ("truthPressureProfile must be baseline, credit_pressure, lossy, or mixed. Current value: "
+                      << truthPressureProfile);
+    }
+    if (truthSendPercent + truthWritePercent + truthReadPercent != 100)
+    {
+        NS_ABORT_MSG ("truthSendPercent + truthWritePercent + truthReadPercent must equal 100. Current sum: "
+                      << (truthSendPercent + truthWritePercent + truthReadPercent));
+    }
+    if (truthDropRate < 0.0 || truthDropRate > 1.0)
+    {
+        NS_ABORT_MSG ("truthDropRate must be in [0, 1]. Current value: " << truthDropRate);
+    }
+    if (!truthPlannerMode.empty () &&
+        truthPlannerMode != "uniform" &&
+        truthPlannerMode != "striped")
+    {
+        NS_ABORT_MSG ("truthPlannerMode must be empty, uniform, or striped. Current value: "
+                      << truthPlannerMode);
+    }
+    if (systemScenarioMode == "soft_ue_truth")
+    {
+        if (!IsSupportedPayloadMtu (traffic.PayloadMtu))
+        {
+            NS_ABORT_MSG ("PayloadMtu must be one of 2048, 4096, or 8192 for soft_ue_truth. Current value: "
+                          << traffic.PayloadMtu);
+        }
+        if (traffic.PayloadMtu + kSoftUeSemanticHeaderOverheadBytes > traffic.Mtu)
+        {
+            NS_ABORT_MSG ("PayloadMtu + semantic header overhead must fit within device MTU for soft_ue_truth. "
+                          << "Current values: PayloadMtu=" << traffic.PayloadMtu
+                          << " header_overhead=" << kSoftUeSemanticHeaderOverheadBytes
+                          << " Mtu=" << traffic.Mtu);
+        }
+    }
 
     // Recalculate number of SUEs per XPU
     network.suesPerXpu = network.portsPerXpu / network.portsPerSue;
+
+    if (truthFlowCount == 0)
+    {
+        truthFlowCount = network.nXpus * network.portsPerXpu;
+    }
+    if (truthOpsPerFlow == 0)
+    {
+        if (truthExperimentClass == "semantic_demo")
+        {
+            truthOpsPerFlow = 1;
+        }
+        else if (truthExperimentClass == "system_smoke")
+        {
+            truthOpsPerFlow = 3;
+        }
+        else
+        {
+            truthOpsPerFlow = 8;
+        }
+    }
+    if (truthPayloadBytes == 0)
+    {
+        truthPayloadBytes = traffic.transactionSize;
+    }
+    const bool truthPressureClass = (truthExperimentClass == "system_pressure");
+    const bool truthTightResourceProfile =
+        truthPressureClass &&
+        (truthPressureProfile == "credit_pressure" || truthPressureProfile == "mixed");
+    if (truthUnexpectedMessages == 0)
+    {
+        truthUnexpectedMessages = truthTightResourceProfile ? 4u : 64u;
+    }
+    if (truthUnexpectedBytes == 0)
+    {
+        truthUnexpectedBytes = truthTightResourceProfile ? 8192u : (1u << 20);
+    }
+    if (truthArrivalBlocks == 0)
+    {
+        truthArrivalBlocks = truthTightResourceProfile ? 4u : 64u;
+    }
+    if (truthReadTracks == 0)
+    {
+        truthReadTracks = truthTightResourceProfile ? 4u : 64u;
+    }
+    if (truthCreditRefreshIntervalNs == 0)
+    {
+        truthCreditRefreshIntervalNs = 5'000'000ULL;
+    }
+    if (truthSendAdmissionMessages == 0)
+    {
+        truthSendAdmissionMessages = truthArrivalBlocks;
+    }
+    if (truthSendAdmissionBytes == 0)
+    {
+        truthSendAdmissionBytes = static_cast<uint64_t> (truthSendAdmissionMessages) *
+                                  static_cast<uint64_t> (truthPayloadBytes);
+    }
+    if (truthWriteBudgetMessages == 0)
+    {
+        truthWriteBudgetMessages = truthArrivalBlocks;
+    }
+    if (truthWriteBudgetBytes == 0)
+    {
+        truthWriteBudgetBytes = static_cast<uint64_t> (truthArrivalBlocks) *
+                                static_cast<uint64_t> (truthPayloadBytes);
+    }
+    if (truthReadResponderMessages == 0)
+    {
+        truthReadResponderMessages = truthReadTracks;
+    }
+    if (truthReadResponseBytes == 0)
+    {
+        truthReadResponseBytes = static_cast<uint64_t> (truthReadTracks) *
+                                 static_cast<uint64_t> (truthPayloadBytes);
+    }
+    if (truthPressureClass &&
+        (truthPressureProfile == "lossy" || truthPressureProfile == "mixed") &&
+        truthDropRate == 0.0)
+    {
+        truthDropRate = 0.10;
+    }
+    if (truthPressureClass &&
+        (truthPressureProfile == "lossy" || truthPressureProfile == "mixed") &&
+        truthReorderWindowNs == 0)
+    {
+        truthReorderWindowNs = 200'000ULL;
+    }
+    if (truthPressureClass &&
+        (truthPressureProfile == "lossy" || truthPressureProfile == "mixed") &&
+        truthExtraDelayNs == 0)
+    {
+        truthExtraDelayNs = 50'000ULL;
+    }
+    if (truthPressureClass &&
+        (truthPressureProfile == "credit_pressure" || truthPressureProfile == "mixed") &&
+        truthInitialCredits == 0)
+    {
+        truthInitialCredits = 4;
+    }
+    if (truthPressureClass && truthPressureProfile != "baseline")
+    {
+        truthRequireFailureEvidence = true;
+    }
+    if (systemScenarioMode == "soft_ue_truth" || systemScenarioMode == "soft_ue_fabric")
+    {
+        const DataRate truthRate = SueStringUtils::ParseDataRateString (truthLinkDataRate);
+        if (truthRate.GetBitRate () == 0)
+        {
+            NS_ABORT_MSG ("truthLinkDataRate must be a positive parsable data rate string for truth-backed modes. Current value: "
+                          << truthLinkDataRate);
+        }
+    }
+    if (systemScenarioMode == "soft_ue_fabric")
+    {
+        if (fabricTopologyMode != "shared_truth" && fabricTopologyMode != "explicit_multipath")
+        {
+            NS_ABORT_MSG ("fabricTopologyMode must be shared_truth or explicit_multipath. Current value: "
+                          << fabricTopologyMode);
+        }
+        if (fabricEndpointMode != "six_endpoint" && fabricEndpointMode != "six_by_six")
+        {
+            NS_ABORT_MSG ("fabricEndpointMode must be six_endpoint or six_by_six. Current value: "
+                          << fabricEndpointMode);
+        }
+        if (fabricTrafficPattern != "all_to_all" &&
+            fabricTrafficPattern != "hotspot" &&
+            fabricTrafficPattern != "incast")
+        {
+            NS_ABORT_MSG ("fabricTrafficPattern must be all_to_all, hotspot, or incast. Current value: "
+                          << fabricTrafficPattern);
+        }
+        if (fabricPathCount == 0)
+        {
+            NS_ABORT_MSG ("fabricPathCount must be > 0 for soft_ue_fabric");
+        }
+        const DataRate fabricRate = SueStringUtils::ParseDataRateString (fabricPathDataRate);
+        if (fabricRate.GetBitRate () == 0)
+        {
+            NS_ABORT_MSG ("fabricPathDataRate must be a positive parsable data rate string. Current value: "
+                          << fabricPathDataRate);
+        }
+        const Time fabricDelay = SueStringUtils::ParseTimeIntervalString (fabricLinkDelay);
+        if (fabricDelay.IsNegative ())
+        {
+            NS_ABORT_MSG ("fabricLinkDelay must be non-negative. Current value: " << fabricLinkDelay);
+        }
+    }
 }
 
 void
@@ -282,7 +585,10 @@ SueSimulationConfig::PrintConfiguration () const
     std::cout << "Traffic Generation Configuration:" << std::endl;
     std::cout << "  Transaction Size: " << traffic.transactionSize << " bytes" << std::endl;
     std::cout << "  Max Burst Size: " << traffic.maxBurstSize << " bytes" << std::endl;
-    std::cout << "  MTU: " << traffic.Mtu << " bytes" << std::endl;
+    std::cout << "  Device MTU: " << traffic.Mtu << " bytes" << std::endl;
+    std::cout << "  Payload MTU: " << traffic.PayloadMtu << " bytes" << std::endl;
+    std::cout << "  Semantic Header Overhead: " << kSoftUeSemanticHeaderOverheadBytes
+              << " bytes" << std::endl;
     std::cout << "  Number of VCs: " << static_cast<int>(traffic.vcNum) << std::endl;
     std::cout << "  Thread Rate: " << traffic.threadRate << " Mbps" << std::endl;
     std::cout << "  Total Bytes to Send: " << traffic.totalBytesToSend << " MB" << std::endl;
@@ -317,13 +623,78 @@ SueSimulationConfig::PrintConfiguration () const
     std::cout << "  Enable All Components: " << (logging.enableAllComponents ? "true" : "false") << std::endl;
     std::cout << std::endl;
 
-    NS_LOG_INFO("Creating XPU-Switch topology with " << network.nXpus << " XPUs ("
+    const bool truthBacked = (systemScenarioMode == "soft_ue_truth" || systemScenarioMode == "soft_ue_fabric");
+    std::cout << "System Scenario Configuration:" << std::endl;
+    std::cout << "  Scenario Mode: " << systemScenarioMode << std::endl;
+    std::cout << "  SoftUe Observer Enabled: " << (enableSoftUeObserver ? "true" : "false") << std::endl;
+    std::cout << "  SoftUe Protocol Logging Enabled: "
+              << (enableSoftUeProtocolLogging ? "true" : "false") << std::endl;
+    std::cout << "  Truth Experiment Class: " << truthExperimentClass << std::endl;
+    std::cout << "  Truth Planner Mode: " << (truthPlannerMode.empty () ? "auto" : truthPlannerMode) << std::endl;
+    std::cout << "  Truth Pressure Profile: " << truthPressureProfile << std::endl;
+    std::cout << "  Truth Flow Count: " << truthFlowCount << std::endl;
+    std::cout << "  Truth Ops Per Flow: " << truthOpsPerFlow << std::endl;
+    std::cout << "  Truth Operation Mix: send=" << truthSendPercent
+              << " write=" << truthWritePercent
+              << " read=" << truthReadPercent << std::endl;
+    std::cout << "  Truth Payload Bytes: " << truthPayloadBytes << std::endl;
+    std::cout << "  Truth Resource Limits: unexpected_msgs=" << truthUnexpectedMessages
+              << " unexpected_bytes=" << truthUnexpectedBytes
+              << " arrival_blocks=" << truthArrivalBlocks
+              << " read_tracks=" << truthReadTracks << std::endl;
+    std::cout << "  Truth Pressure Knobs: drop_rate=" << truthDropRate
+              << " reorder_window_ns=" << truthReorderWindowNs
+              << " extra_delay_ns=" << truthExtraDelayNs
+              << " link_data_rate=" << truthLinkDataRate
+              << " op_spacing_ns=" << truthOpSpacingNs
+              << " initial_credits=" << truthInitialCredits
+              << " credit_refresh_interval_ns=" << truthCreditRefreshIntervalNs
+              << " send_admission_messages=" << truthSendAdmissionMessages
+              << " send_admission_bytes=" << truthSendAdmissionBytes
+              << " write_budget_messages=" << truthWriteBudgetMessages
+              << " write_budget_bytes=" << truthWriteBudgetBytes
+              << " read_responder_messages=" << truthReadResponderMessages
+              << " read_response_bytes=" << truthReadResponseBytes
+              << " retry_timeout_ns=" << truthRetryTimeoutNs
+              << " require_failure_evidence=" << (truthRequireFailureEvidence ? "true" : "false")
+              << std::endl;
+    std::cout << "  Truth Protocol CSV Required: "
+              << (truthProtocolCsvRequired ? "true" : "false") << std::endl;
+    if (systemScenarioMode == "soft_ue_fabric")
+    {
+        std::cout << "  Fabric Topology Mode: " << fabricTopologyMode << std::endl;
+        std::cout << "  Fabric Endpoint Mode: " << fabricEndpointMode << std::endl;
+        std::cout << "  Fabric Path Count: " << fabricPathCount << std::endl;
+        std::cout << "  Fabric Path Data Rate: " << fabricPathDataRate << std::endl;
+        std::cout << "  Fabric Link Delay: " << fabricLinkDelay << std::endl;
+        std::cout << "  Fabric Use ECMP Hash: " << (fabricUseEcmpHash ? "true" : "false") << std::endl;
+        std::cout << "  Fabric Dynamic Path Selection: " << (fabricDynamicPathSelection ? "true" : "false") << std::endl;
+        std::cout << "  Fabric ECN Observation: " << (fabricEnableEcnObservation ? "true" : "false") << std::endl;
+        std::cout << "  Fabric Traffic Pattern: " << fabricTrafficPattern << std::endl;
+    }
+    std::cout << "  soft_ue_truth_backed: " << (truthBacked ? "true" : "false") << std::endl;
+    std::cout << std::endl;
+
+    NS_LOG_INFO("Creating " << (truthBacked ? "soft-ue truth" : "legacy XPU-Switch")
+               << " topology with " << network.nXpus << " XPUs ("
                << network.portsPerXpu << " ports/XPU, " << network.portsPerSue << " ports/SUE, "
                << network.suesPerXpu << " SUEs/XPU)");
     NS_LOG_INFO("Total simulation time: " << timing.simulationTime << " seconds");
     NS_LOG_INFO("Servers active: " << timing.serverStart << "s to " << GetServerStop () << "s");
     NS_LOG_INFO("Clients active: " << timing.clientStart << "s to " << GetClientStop () << "s");
     NS_LOG_INFO("Thread start interval: " << timing.threadStartInterval << "s");
+    if (systemScenarioMode == "soft_ue_truth")
+    {
+        NS_LOG_INFO ("System scenario mode soft_ue_truth selected; system experiment is soft-ue truth-backed");
+    }
+    else if (systemScenarioMode == "soft_ue_fabric")
+    {
+        NS_LOG_INFO ("System scenario mode soft_ue_fabric selected; system experiment is explicit fabric truth-backed");
+    }
+    else
+    {
+        NS_LOG_INFO ("System scenario mode legacy_sue selected; this run is not soft-ue truth-backed");
+    }
 }
 
 double

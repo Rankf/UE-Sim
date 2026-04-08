@@ -39,6 +39,7 @@
 #include "ns3/traced-callback.h"
 #include "ns3/packet.h"
 #include "ns3/mac48-address.h"
+#include <queue>
 #include "../common/transport-layer.h"
 
 namespace ns3 {

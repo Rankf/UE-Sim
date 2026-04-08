@@ -121,6 +121,7 @@ struct BufferedPacket
     bool eom;                                  ///< End of message flag
     uint32_t sequenceNumber;                  ///< Sequence number
     Ptr<RtoTimer> rtoTimer;                    ///< RTO timer for this packet
+    EventId timeoutEvent;                      ///< ns-3 timeout event for retransmission
 
     BufferedPacket ()
         : packet (nullptr), timestamp (Seconds (0)), lastRetransmission (Seconds (0)),
@@ -293,6 +294,12 @@ public:
      */
     Time GetCurrentRto (void) const;
 
+    uint32_t GetInflightPacketCount (void) const;
+    uint32_t GetOutOfOrderPacketCount (void) const;
+    uint32_t GetPendingSelectiveAckCount (void) const;
+    uint32_t GetPendingGapNackCount (void) const;
+    TpdcSessionProgressRecord GetSessionProgressRecord (void) const;
+
     // TPDC-specific traced callbacks
     TracedCallback<uint32_t, uint32_t> m_bufferTrace;           ///< Buffer size trace
     TracedCallback<const Acknowledgment&> m_ackTrace;           ///< Acknowledgment trace
@@ -331,21 +338,34 @@ private:
     uint32_t m_nextReceiveSequence;            ///< Next expected receive sequence
     uint32_t m_sendWindowBase;                 ///< Base of send window
     uint32_t m_receiveWindowBase;              ///< Base of receive window
+    uint32_t m_highestObservedSequence;        ///< Highest sequence observed on receive side
 
     // Packet buffers
     std::unordered_map<uint32_t, BufferedPacket> m_sendBuffer;  ///< Send buffer (seq -> packet)
     std::unordered_map<uint32_t, BufferedPacket> m_receiveBuffer; ///< Receive buffer (seq -> packet)
-    std::queue<Ptr<Packet>> m_sendQueue;       ///< Outgoing packet queue
+    std::queue<BufferedPacket> m_sendQueue;    ///< Outgoing packet queue
 
     // ACK management
     std::queue<Acknowledgment> m_ackQueue;     ///< Acknowledgment queue
     EventId m_ackEventId;                      ///< ACK transmission event ID
     Time m_ackInterval;                        ///< ACK transmission interval
+    uint32_t m_pendingSelectiveAckCount;       ///< Outstanding selective ACK hints
+    uint32_t m_pendingGapNackCount;            ///< Outstanding gap-NACK hints
 
     // RTO and RTT management
     Time m_currentRto;                         ///< Current retransmission timeout
     Time m_currentRtt;                         ///< Current round-trip time estimate
     Time m_rttVariance;                         ///< RTT variance for calculation
+    uint32_t m_txDataPacketsTotal;             ///< Data packets transmitted by this session
+    uint32_t m_txControlPacketsTotal;          ///< Control packets transmitted by this session
+    uint32_t m_rxDataPacketsTotal;             ///< Data packets received by this session
+    uint32_t m_rxControlPacketsTotal;          ///< Control packets received by this session
+    uint32_t m_ackSentTotal;                   ///< ACK packets emitted by this session
+    uint32_t m_ackReceivedTotal;               ///< ACK packets received by this session
+    uint32_t m_gapNackReceivedTotal;           ///< GAP-NACK hints received by this session
+    uint32_t m_lastAckSequence;                ///< Last cumulative ACK sequence observed
+    uint32_t m_sendBufferSizeMax;              ///< Max send-buffer occupancy observed
+    uint32_t m_ackAdvanceEventsTotal;          ///< Times ACK advanced send window base
 
     // Internal helper methods
     bool BufferPacketForSending (Ptr<Packet> packet, bool som, bool eom);
@@ -367,6 +387,12 @@ private:
     Acknowledgment CreateAcknowledgment (void);
     uint32_t GenerateSequenceNumber (void);
     void UpdateStatistics (void);
+    bool SendControlPacket (uint8_t flags,
+                            uint32_t cumulativeAck,
+                            uint32_t selectiveAck,
+                            uint32_t gapNack);
+    void ArmTimeout (uint32_t sequenceNumber);
+    void CancelTimeout (BufferedPacket& packet);
 };
 
 } // namespace ns3

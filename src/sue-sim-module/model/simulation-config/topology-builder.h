@@ -24,6 +24,7 @@
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
 #include "ns3/internet-module.h"
+#include "ns3/soft-ue-module.h"
 #include "ns3/sue-sim-module-module.h"
 #include <vector>
 #include <map>
@@ -98,6 +99,33 @@ public:
      */
     std::vector<std::vector<Mac48Address>>& GetXpuMacAddresses ();
 
+    /**
+     * \brief Whether the built topology uses soft-ue truth devices
+     * \return true when running the soft_ue_truth path
+     */
+    bool HasSoftUeTruthPath () const;
+    bool HasSoftUeFabricPath () const;
+
+    /**
+     * \brief Get all SoftUeNetDevice instances in truth mode
+     * \return Soft-ue device container
+     */
+    const NetDeviceContainer& GetSoftUeDevices () const;
+
+    /**
+     * \brief Get per-XPU soft-ue device view in truth mode
+     * \return Soft-ue device matrix indexed by XPU and local device slot
+     */
+    const std::vector<std::vector<Ptr<SoftUeNetDevice>>>& GetSoftUeDeviceMatrix () const;
+
+    /**
+     * \brief Get a truth-mode device by XPU/port index
+     * \param xpuIdx XPU index
+     * \param portIdx Port index within the XPU
+     * \return Pointer to the requested SoftUeNetDevice or null when unavailable
+     */
+    Ptr<SoftUeNetDevice> GetTruthDevice (uint32_t xpuIdx, uint32_t portIdx) const;
+
 private:
     /**
      * \brief Create XPU and switch nodes based on configuration
@@ -124,6 +152,12 @@ private:
     void CreateConnections (const SueSimulationConfig& config);
 
     /**
+     * \brief Create minimal soft-ue truth connections
+     * \param config Simulation configuration parameters
+     */
+    void CreateSoftUeTruthConnections (const SueSimulationConfig& config);
+
+    /**
      * \brief Build global switch forwarding tables for efficient routing
      * \param config Simulation configuration parameters
      */
@@ -142,6 +176,8 @@ private:
     // Network devices
     std::vector<std::vector<Ptr<NetDevice>>> m_xpuDevices;
     std::vector<std::vector<Ptr<NetDevice>>> m_switchDevices;
+    NetDeviceContainer m_softUeDevices;
+    std::vector<std::vector<Ptr<SoftUeNetDevice>>> m_softUeDeviceMatrix;
 
     // IP addresses
     std::vector<std::vector<Ipv4Address>> m_xpuPortIps;
@@ -158,6 +194,8 @@ private:
 
     // Global IP to MAC mapping table
     std::map<Ipv4Address, Mac48Address> m_ipToMacMap;
+    bool m_hasSoftUeTruthPath;
+    bool m_hasSoftUeFabricPath;
 };
 
 } // namespace ns3

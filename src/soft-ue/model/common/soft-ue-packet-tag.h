@@ -38,6 +38,19 @@
 
 namespace ns3 {
 
+enum SoftUeMetadataFlags : uint8_t
+{
+    SOFT_UE_METADATA_RESPONSE = 0x01,
+    SOFT_UE_METADATA_RETRY = 0x02,
+};
+
+enum SoftUeTpdcControlFlags : uint8_t
+{
+    SOFT_UE_TPDC_CTRL_ACK = 0x01,
+    SOFT_UE_TPDC_CTRL_SACK = 0x02,
+    SOFT_UE_TPDC_CTRL_GAP_NACK = 0x04,
+};
+
 /**
  * @class SoftUeHeaderTag
  * @brief ns-3 packet tag for Soft-UE protocol headers
@@ -285,11 +298,80 @@ public:
      */
     void SetReliable (bool reliable);
 
+    uint32_t GetRequestLength (void) const;
+    void SetRequestLength (uint32_t requestLength);
+
+    uint32_t GetFragmentOffset (void) const;
+    void SetFragmentOffset (uint32_t fragmentOffset);
+
+    uint64_t GetRemoteAddress (void) const;
+    void SetRemoteAddress (uint64_t remoteAddress);
+
+    uint64_t GetRemoteKey (void) const;
+    void SetRemoteKey (uint64_t remoteKey);
+
+    uint8_t GetFlags (void) const;
+    void SetFlags (uint8_t flags);
+
+    bool IsResponse (void) const;
+    void SetIsResponse (bool isResponse);
+
+    bool IsRetry (void) const;
+    void SetIsRetry (bool isRetry);
+
+    uint8_t GetResponseOpCode (void) const;
+    void SetResponseOpCode (uint8_t opcode);
+
+    uint8_t GetReturnCode (void) const;
+    void SetReturnCode (uint8_t returnCode);
+
+    uint32_t GetModifiedLength (void) const;
+    void SetModifiedLength (uint32_t modifiedLength);
+
 private:
     OpType m_opType;              ///< Operation type
     uint32_t m_messageId;         ///< Message identifier
     uint16_t m_resourceIndex;     ///< Resource index
     bool m_reliable;              ///< Reliable transmission flag
+    uint32_t m_requestLength;     ///< Full logical request length
+    uint32_t m_fragmentOffset;    ///< Fragment offset within request
+    uint64_t m_remoteAddress;     ///< Remote/target address
+    uint64_t m_remoteKey;         ///< Remote memory key
+    uint8_t m_flags;              ///< Generic response/retry flags
+    uint8_t m_responseOpCode;     ///< Response opcode when packet is a semantic response
+    uint8_t m_returnCode;         ///< Response return code
+    uint32_t m_modifiedLength;    ///< Response modified length
+};
+
+class SoftUeTpdcControlTag : public Tag
+{
+public:
+    static TypeId GetTypeId (void);
+    virtual TypeId GetInstanceTypeId (void) const override;
+    virtual uint32_t GetSerializedSize (void) const override;
+    virtual void Serialize (TagBuffer i) const override;
+    virtual void Deserialize (TagBuffer i) override;
+    virtual void Print (std::ostream &os) const override;
+
+    SoftUeTpdcControlTag ();
+
+    uint8_t GetFlags (void) const;
+    void SetFlags (uint8_t flags);
+
+    uint32_t GetCumulativeAck (void) const;
+    void SetCumulativeAck (uint32_t ack);
+
+    uint32_t GetSelectiveAck (void) const;
+    void SetSelectiveAck (uint32_t ack);
+
+    uint32_t GetGapNack (void) const;
+    void SetGapNack (uint32_t nack);
+
+private:
+    uint8_t m_flags;
+    uint32_t m_cumulativeAck;
+    uint32_t m_selectiveAck;
+    uint32_t m_gapNack;
 };
 
 /**
@@ -372,6 +454,9 @@ public:
      * @param time Expected delivery time
      */
     void SetExpectedDeliveryTime (Time time);
+
+    Time GetAuxTimestamp (void) const;
+    void SetAuxTimestamp (Time time);
 
 private:
     Time m_timestamp;              ///< Creation timestamp

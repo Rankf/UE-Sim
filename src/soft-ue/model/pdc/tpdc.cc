@@ -1,13 +1,14 @@
 #include "tpdc.h"
+#include "../common/soft-ue-packet-tag.h"
 #include "../network/soft-ue-net-device.h"
+#include "ns3/boolean.h"
 #include "ns3/log.h"
-#include "ns3/simulator.h"
 #include "ns3/nstime.h"
 #include "ns3/packet.h"
+#include "ns3/simulator.h"
 #include "ns3/uinteger.h"
-#include "ns3/boolean.h"
 #include <algorithm>
-#include <unordered_map>
+#include <cmath>
 
 namespace ns3 {
 
@@ -20,11 +21,7 @@ Tpdc::GetTypeId (void)
   static TypeId tid = TypeId ("ns3::Tpdc")
     .SetParent<PdcBase> ()
     .SetGroupName ("Soft-Ue")
-    .AddConstructor<Tpdc> ()
-    // TODO: Add proper getter/setter methods for TPDC attributes
-    // For now, we'll skip these attributes to focus on basic compilation
-    // TODO: Add proper trace sources later after basic compilation works
-    ;
+    .AddConstructor<Tpdc> ();
   return tid;
 }
 
@@ -40,14 +37,25 @@ Tpdc::Tpdc ()
     m_nextReceiveSequence (1),
     m_sendWindowBase (1),
     m_receiveWindowBase (1),
-    m_ackInterval (MilliSeconds (50)),
-    m_currentRto (MilliSeconds (200)),
-    m_currentRtt (MilliSeconds (0)),
-    m_rttVariance (MilliSeconds (0))
+    m_highestObservedSequence (0),
+    m_ackInterval (MilliSeconds (1)),
+    m_pendingSelectiveAckCount (0),
+    m_pendingGapNackCount (0),
+    m_currentRto (MilliSeconds (30)),
+    m_currentRtt (Seconds (0)),
+    m_rttVariance (Seconds (0)),
+    m_txDataPacketsTotal (0),
+    m_txControlPacketsTotal (0),
+    m_rxDataPacketsTotal (0),
+    m_rxControlPacketsTotal (0),
+    m_ackSentTotal (0),
+    m_ackReceivedTotal (0),
+    m_gapNackReceivedTotal (0),
+    m_lastAckSequence (0),
+    m_sendBufferSizeMax (0),
+    m_ackAdvanceEventsTotal (0)
 {
   NS_LOG_FUNCTION (this);
-
-  // Initialize TPDC-specific configuration
   m_tpdcConfig = TpdcConfig ();
   m_tpdcStatistics = TpdcStatistics ();
 }
@@ -62,17 +70,13 @@ Tpdc::DoDispose (void)
 {
   NS_LOG_FUNCTION (this);
 
-  // Cancel ACK event
   if (m_ackEventId.IsPending ())
     {
       Simulator::Cancel (m_ackEventId);
     }
 
-  // Clear buffers
   ClearSendBuffer ();
   ClearReceiveBuffer ();
-
-  // Clear queues
   while (!m_sendQueue.empty ())
     {
       m_sendQueue.pop ();
@@ -90,42 +94,50 @@ Tpdc::Initialize (const PdcConfig& config)
 {
   NS_LOG_FUNCTION (this << "Initializing TPDC " << config.pdcId);
 
-  // Initialize base class
   if (!PdcBase::Initialize (config))
     {
       return false;
     }
 
-  // Convert to TPDC config
-  try
+  m_tpdcConfig = TpdcConfig ();
+  m_tpdcConfig.pdcId = config.pdcId;
+  m_tpdcConfig.localFep = config.localFep;
+  m_tpdcConfig.remoteFep = config.remoteFep;
+  m_tpdcConfig.tc = config.tc;
+  m_tpdcConfig.type = PdcType::TPDC;
+  m_tpdcConfig.deliveryMode = config.deliveryMode;
+  m_tpdcConfig.maxPacketSize = config.maxPacketSize;
+  m_tpdcConfig.rtoPdcContext = config.rtoPdcContext;
+  m_tpdcConfig.rtoCccContext = config.rtoCccContext;
+  m_tpdcConfig.rtoInitial = config.rtoInitial;
+  m_tpdcConfig.rtoMax = config.rtoMax;
+  m_tpdcConfig.detailedLogging = config.detailedLogging;
+  m_tpdcConfig.sequenceNumber = config.sequenceNumber;
+
+  if (config.type == PdcType::TPDC)
     {
-      m_tpdcConfig = static_cast<const TpdcConfig&>(config);
-    }
-  catch (const std::bad_cast& e)
-    {
-      NS_LOG_WARN ("Config is not TpdcConfig, using defaults");
-      m_tpdcConfig = TpdcConfig ();
-      m_tpdcConfig.pdcId = config.pdcId;
-      m_tpdcConfig.localFep = config.localFep;
-      m_tpdcConfig.remoteFep = config.remoteFep;
-      m_tpdcConfig.tc = config.tc;
-      m_tpdcConfig.deliveryMode = config.deliveryMode;
-      m_tpdcConfig.maxPacketSize = config.maxPacketSize;
-      m_tpdcConfig.rtoPdcContext = config.rtoPdcContext;
-      m_tpdcConfig.rtoCccContext = config.rtoCccContext;
+      const TpdcConfig& typedConfig = static_cast<const TpdcConfig&> (config);
+      m_tpdcConfig = typedConfig;
     }
 
-  // Initialize sequence numbers and windows
   m_nextSendSequence = 1;
   m_nextReceiveSequence = 1;
   m_sendWindowBase = 1;
   m_receiveWindowBase = 1;
-
-  // Initialize RTO
+  m_highestObservedSequence = 0;
+  m_pendingSelectiveAckCount = 0;
+  m_pendingGapNackCount = 0;
   m_currentRto = m_tpdcConfig.initialRto;
-
-  // Start ACK scheduling
-  ScheduleAcknowledgment ();
+  m_txDataPacketsTotal = 0;
+  m_txControlPacketsTotal = 0;
+  m_rxDataPacketsTotal = 0;
+  m_rxControlPacketsTotal = 0;
+  m_ackSentTotal = 0;
+  m_ackReceivedTotal = 0;
+  m_gapNackReceivedTotal = 0;
+  m_lastAckSequence = 0;
+  m_sendBufferSizeMax = 0;
+  m_ackAdvanceEventsTotal = 0;
 
   NS_LOG_INFO ("TPDC " << m_tpdcConfig.pdcId << " initialized successfully");
   return true;
@@ -134,7 +146,7 @@ Tpdc::Initialize (const PdcConfig& config)
 bool
 Tpdc::SendPacket (Ptr<Packet> packet, bool som, bool eom)
 {
-  NS_LOG_FUNCTION (this << "Sending packet, size: " << packet->GetSize ());
+  NS_LOG_FUNCTION (this << packet << som << eom);
 
   if (!packet || !IsActive ())
     {
@@ -142,58 +154,69 @@ Tpdc::SendPacket (Ptr<Packet> packet, bool som, bool eom)
       return false;
     }
 
-  // Validate packet
   if (!ValidatePacket (packet, true))
     {
       HandleError (PdsErrorCode::INVALID_PACKET, "Packet validation failed");
       return false;
     }
 
-  // Buffer packet for sending
   return BufferPacketForSending (packet, som, eom);
 }
 
 bool
 Tpdc::HandleReceivedPacket (Ptr<Packet> packet, uint32_t sourceFep)
 {
-  NS_LOG_FUNCTION (this << "Handling received packet from FEP " << sourceFep);
+  NS_LOG_FUNCTION (this << packet << sourceFep);
 
-  if (!packet || !IsActive ())
-    {
-      HandleError (PdsErrorCode::INVALID_PACKET, "Null packet or inactive TPDC");
-      return false;
-    }
-
-  // Let base class handle basic validation
-  if (!PdcBase::HandleReceivedPacket (packet, sourceFep))
+  if (!ValidateAndRecordReceivedPacket (packet, sourceFep))
     {
       return false;
     }
 
-  // Validate packet for TPDC
-  if (!ValidatePacket (packet, false))
+  PDSHeader header;
+  packet->PeekHeader (header);
+
+  SoftUeTpdcControlTag controlTag;
+  if (packet->PeekPacketTag (controlTag))
     {
-      HandleError (PdsErrorCode::INVALID_PACKET, "TPDC packet validation failed");
-      return false;
+      Acknowledgment ack;
+      ack.ackSequence = controlTag.GetCumulativeAck ();
+      ack.receiveWindow = m_tpdcConfig.receiveWindowSize;
+      ack.cumulative = (controlTag.GetFlags () & SOFT_UE_TPDC_CTRL_ACK) != 0;
+      if ((controlTag.GetFlags () & SOFT_UE_TPDC_CTRL_GAP_NACK) != 0 &&
+          controlTag.GetGapNack () != 0)
+        {
+          ack.nackList.push_back (controlTag.GetGapNack ());
+        }
+
+      bool handled = ProcessReceivedAcknowledgment (ack);
+      if ((controlTag.GetFlags () & SOFT_UE_TPDC_CTRL_SACK) != 0 &&
+          controlTag.GetSelectiveAck () != 0)
+        {
+          auto it = m_sendBuffer.find (controlTag.GetSelectiveAck ());
+          if (it != m_sendBuffer.end ())
+            {
+              it->second.acknowledged = true;
+              handled = true;
+            }
+          CleanupAcknowledgedPackets ();
+          ProcessSendQueue ();
+        }
+
+      return handled;
     }
 
-  // Extract sequence number from packet (simplified)
-  uint32_t seqNum = m_nextReceiveSequence;
-
-  // Buffer packet for receiving
-  return BufferPacketForReceiving (packet, seqNum);
+  return BufferPacketForReceiving (packet, header.GetSequenceNumber ());
 }
 
 TpdcStatistics
 Tpdc::GetTpdcStatistics (void) const
 {
-  // Update current buffer sizes
   TpdcStatistics stats = m_tpdcStatistics;
-  stats.currentSendBufferSize = m_sendBuffer.size ();
-  stats.currentReceiveBufferSize = m_receiveBuffer.size ();
+  stats.currentSendBufferSize = static_cast<uint32_t> (m_sendBuffer.size ());
+  stats.currentReceiveBufferSize = static_cast<uint32_t> (m_receiveBuffer.size ());
   stats.averageRto = m_currentRto.GetMilliSeconds ();
   stats.averageRoundTripTime = m_currentRtt;
-
   return stats;
 }
 
@@ -202,18 +225,28 @@ Tpdc::ResetTpdcStatistics (void)
 {
   NS_LOG_FUNCTION (this);
   m_tpdcStatistics = TpdcStatistics ();
+  m_txDataPacketsTotal = 0;
+  m_txControlPacketsTotal = 0;
+  m_rxDataPacketsTotal = 0;
+  m_rxControlPacketsTotal = 0;
+  m_ackSentTotal = 0;
+  m_ackReceivedTotal = 0;
+  m_gapNackReceivedTotal = 0;
+  m_lastAckSequence = 0;
+  m_sendBufferSizeMax = 0;
+  m_ackAdvanceEventsTotal = 0;
 }
 
 uint32_t
 Tpdc::GetSendBufferSize (void) const
 {
-  return m_sendBuffer.size ();
+  return static_cast<uint32_t> (m_sendBuffer.size ());
 }
 
 uint32_t
 Tpdc::GetReceiveBufferSize (void) const
 {
-  return m_receiveBuffer.size ();
+  return static_cast<uint32_t> (m_receiveBuffer.size ());
 }
 
 TpdcConfig
@@ -234,98 +267,102 @@ Tpdc::UpdateTpdcConfiguration (const TpdcConfig& config)
     }
 
   m_tpdcConfig = config;
-
-  // Update RTO if changed
-  if (config.initialRto != m_currentRto)
-    {
-      m_currentRto = config.initialRto;
-    }
-
+  m_currentRto = config.initialRto;
   return true;
 }
 
 bool
 Tpdc::SendAcknowledgment (const Acknowledgment& ack)
 {
-  NS_LOG_FUNCTION (this << "Sending ACK for sequence " << ack.ackSequence);
+  NS_LOG_FUNCTION (this << ack.ackSequence);
 
-  // In a real implementation, this would send the ACK packet
-  // For simulation, we just update statistics and trace
+  uint8_t flags = SOFT_UE_TPDC_CTRL_ACK;
+  uint32_t selectiveAck = 0;
+  uint32_t gapNack = 0;
+  if (!m_receiveBuffer.empty ())
+    {
+      flags |= SOFT_UE_TPDC_CTRL_SACK;
+      selectiveAck = std::min_element (
+        m_receiveBuffer.begin (),
+        m_receiveBuffer.end (),
+        [] (const auto& lhs, const auto& rhs) { return lhs.first < rhs.first; })->first;
+    }
+  if (!ack.nackList.empty ())
+    {
+      flags |= SOFT_UE_TPDC_CTRL_GAP_NACK;
+      gapNack = ack.nackList.front ();
+    }
+
+  if (!SendControlPacket (flags, ack.ackSequence, selectiveAck, gapNack))
+    {
+      return false;
+    }
+
   m_tpdcStatistics.acknowledgmentsSent++;
+  ++m_ackSentTotal;
   if (ack.cumulative)
     {
       m_tpdcStatistics.cumulativeAcksSent++;
     }
-
+  m_pendingSelectiveAckCount = static_cast<uint32_t> (m_receiveBuffer.size ());
+  m_pendingGapNackCount = ack.nackList.empty () ? 0u : 1u;
   m_ackTrace (ack);
-
-  LogDetailed ("SendAcknowledgment", "ACK sent for sequence " +
-               std::to_string (ack.ackSequence));
-
   return true;
 }
 
 bool
 Tpdc::ProcessReceivedAcknowledgment (const Acknowledgment& ack)
 {
-  NS_LOG_FUNCTION (this << "Processing ACK for sequence " << ack.ackSequence);
+  NS_LOG_FUNCTION (this << ack.ackSequence);
 
   m_tpdcStatistics.acknowledgmentsReceived++;
+  ++m_rxControlPacketsTotal;
+  ++m_ackReceivedTotal;
+  if (!ack.nackList.empty ())
+    {
+      ++m_gapNackReceivedTotal;
+    }
+  m_lastAckSequence = ack.ackSequence;
 
-  // Check if this is a duplicate ACK
-  if (ack.ackSequence < m_sendWindowBase)
+  if (ack.ackSequence + 1 < m_sendWindowBase)
     {
       m_tpdcStatistics.duplicateAcksReceived++;
       return false;
     }
 
-  // Update send window base
-  uint32_t oldBase = m_sendWindowBase;
-  m_sendWindowBase = ack.ackSequence + 1;
-
-  // Mark acknowledged packets
-  for (uint32_t seq = oldBase; seq < ack.ackSequence; seq++)
+  bool advanced = false;
+  const uint32_t newBase = std::max (m_sendWindowBase, ack.ackSequence + 1);
+  if (newBase > m_sendWindowBase)
+    {
+      ++m_ackAdvanceEventsTotal;
+    }
+  for (uint32_t seq = m_sendWindowBase; seq < newBase; ++seq)
     {
       auto it = m_sendBuffer.find (seq);
-      if (it != m_sendBuffer.end ())
+      if (it != m_sendBuffer.end () && !it->second.acknowledged)
         {
           it->second.acknowledged = true;
-
-          // Calculate RTT if this is the first time acknowledging
-          Time measuredRtt = Seconds (0);
-          if (m_currentRtt.IsZero ())
-            {
-              measuredRtt = Simulator::Now () - it->second.timestamp;
-              UpdateRtoEstimate (measuredRtt);
-            }
-
+          const Time measuredRtt = Simulator::Now () - it->second.timestamp;
+          UpdateRtoEstimate (measuredRtt);
           m_rttTrace (m_currentRtt, measuredRtt);
+          advanced = true;
         }
     }
+  m_sendWindowBase = newBase;
 
-  // Cleanup acknowledged packets
-  CleanupAcknowledgedPackets ();
-
-  // Update receive window
-  m_receiveWindowBase = ack.receiveWindow;
-
-  // Update send window
-  UpdateSendWindow ();
-
-  // Process NACKs
   for (uint32_t nackSeq : ack.nackList)
     {
       auto it = m_sendBuffer.find (nackSeq);
-      if (it != m_sendBuffer.end ())
+      if (it != m_sendBuffer.end () && !it->second.acknowledged)
         {
           RetransmitPacket (nackSeq);
         }
     }
 
-  LogDetailed ("ProcessReceivedAcknowledgment", "ACK processed, new send window base: " +
-               std::to_string (m_sendWindowBase));
-
-  return true;
+  CleanupAcknowledgedPackets ();
+  ProcessSendQueue ();
+  UpdateSendWindow ();
+  return advanced || !ack.nackList.empty ();
 }
 
 uint32_t
@@ -334,27 +371,25 @@ Tpdc::ForceRetransmission (void)
   NS_LOG_FUNCTION (this);
 
   uint32_t retransmitted = 0;
-
   for (auto& pair : m_sendBuffer)
     {
-      if (!pair.second.acknowledged &&
-          pair.second.retransmissionCount < m_tpdcConfig.maxRetransmissions)
+      if (!pair.second.acknowledged)
         {
           RetransmitPacket (pair.first);
-          retransmitted++;
+          ++retransmitted;
         }
     }
-
-  LogDetailed ("ForceRetransmission", "Forced retransmission of " +
-               std::to_string (retransmitted) + " packets");
-
   return retransmitted;
 }
 
 uint32_t
 Tpdc::ClearSendBuffer (void)
 {
-  uint32_t count = m_sendBuffer.size ();
+  const uint32_t count = static_cast<uint32_t> (m_sendBuffer.size ());
+  for (auto& entry : m_sendBuffer)
+    {
+      CancelTimeout (entry.second);
+    }
   m_sendBuffer.clear ();
   return count;
 }
@@ -362,8 +397,10 @@ Tpdc::ClearSendBuffer (void)
 uint32_t
 Tpdc::ClearReceiveBuffer (void)
 {
-  uint32_t count = m_receiveBuffer.size ();
+  const uint32_t count = static_cast<uint32_t> (m_receiveBuffer.size ());
   m_receiveBuffer.clear ();
+  m_pendingSelectiveAckCount = 0;
+  m_pendingGapNackCount = 0;
   return count;
 }
 
@@ -379,6 +416,56 @@ Tpdc::GetCurrentRto (void) const
   return m_currentRto;
 }
 
+uint32_t
+Tpdc::GetInflightPacketCount (void) const
+{
+  return static_cast<uint32_t> (m_sendBuffer.size ());
+}
+
+uint32_t
+Tpdc::GetOutOfOrderPacketCount (void) const
+{
+  return static_cast<uint32_t> (m_receiveBuffer.size ());
+}
+
+uint32_t
+Tpdc::GetPendingSelectiveAckCount (void) const
+{
+  return m_pendingSelectiveAckCount;
+}
+
+uint32_t
+Tpdc::GetPendingGapNackCount (void) const
+{
+  return m_pendingGapNackCount;
+}
+
+TpdcSessionProgressRecord
+Tpdc::GetSessionProgressRecord (void) const
+{
+  TpdcSessionProgressRecord record;
+  record.timestamp_ns = Simulator::Now ().GetNanoSeconds ();
+  record.local_fep = GetLocalFep ();
+  record.remote_fep = GetRemoteFep ();
+  record.pdc_id = m_tpdcConfig.pdcId;
+  record.tx_data_packets_total = m_txDataPacketsTotal;
+  record.tx_control_packets_total = m_txControlPacketsTotal;
+  record.rx_data_packets_total = m_rxDataPacketsTotal;
+  record.rx_control_packets_total = m_rxControlPacketsTotal;
+  record.ack_sent_total = m_ackSentTotal;
+  record.ack_received_total = m_ackReceivedTotal;
+  record.gap_nack_received_total = m_gapNackReceivedTotal;
+  record.last_ack_sequence = m_lastAckSequence;
+  record.send_window_base = m_sendWindowBase;
+  record.next_send_sequence = m_nextSendSequence;
+  record.send_buffer_size_current = static_cast<uint32_t> (m_sendBuffer.size ());
+  record.send_buffer_size_max = m_sendBufferSizeMax;
+  record.retransmissions_total = static_cast<uint32_t> (m_tpdcStatistics.retransmissions);
+  record.rto_timeouts_total = static_cast<uint32_t> (m_tpdcStatistics.retransmissionTimeouts);
+  record.ack_advance_events_total = m_ackAdvanceEventsTotal;
+  return record;
+}
+
 bool
 Tpdc::ValidatePacket (Ptr<Packet> packet, bool isSend) const
 {
@@ -387,49 +474,14 @@ Tpdc::ValidatePacket (Ptr<Packet> packet, bool isSend) const
       return false;
     }
 
-  uint32_t packetSize = packet->GetSize ();
-
-  // Additional TPDC-specific validation
-  if (packetSize > m_tpdcConfig.maxPacketSize)
-    {
-      LogDetailed ("ValidatePacket", "Packet size exceeds TPDC limit: " +
-                   std::to_string (packetSize));
-      return false;
-    }
-
-  return true;
+  return packet->GetSize () <= static_cast<uint32_t> (m_tpdcConfig.maxPacketSize) + 64u;
 }
 
 bool
 Tpdc::HandleError (PdsErrorCode error, const std::string& details)
 {
-  NS_LOG_FUNCTION (this << "TPDC Error: " << static_cast<int> (error) << " - " << details);
-
-  // Update TPDC-specific error statistics
+  NS_LOG_FUNCTION (this << static_cast<int> (error) << details);
   m_tpdcStatistics.errors++;
-
-  // Handle specific TPDC errors
-  switch (error)
-    {
-    case PdsErrorCode::PDC_FULL:
-      if (details.find ("send") != std::string::npos)
-        {
-          m_tpdcStatistics.sendBufferOverflows++;
-        }
-      else
-        {
-          m_tpdcStatistics.receiveBufferOverflows++;
-        }
-      NS_LOG_WARN ("TPDC buffer full, consider increasing buffer sizes");
-      break;
-    case PdsErrorCode::RESOURCE_EXHAUSTED:
-      NS_LOG_WARN ("TPDC resources exhausted, system may need scaling");
-      break;
-    default:
-      break;
-    }
-
-  // Let base class handle common error processing
   return PdcBase::HandleError (error, details);
 }
 
@@ -443,201 +495,166 @@ Tpdc::BufferPacketForSending (Ptr<Packet> packet, bool som, bool eom)
       return false;
     }
 
-  // Check if sequence number is in send window
-  uint32_t seq = GenerateSequenceNumber ();
-  if (!IsInSendWindow (seq))
+  if (!IsInSendWindow (m_nextSendSequence))
     {
-      // Queue packet for later sending
-      m_sendQueue.push (packet);
+      m_sendQueue.push (BufferedPacket (packet->Copy (), som, eom, 0));
       return true;
     }
 
-  // Create buffered packet
-  BufferedPacket bp (packet, som, eom, seq);
+  const uint32_t seq = GenerateSequenceNumber ();
+  BufferedPacket buffered (packet->Copy (), som, eom, seq);
+  m_sendBuffer[seq] = buffered;
 
-  // Create RTO timer
-  bp.rtoTimer = CreateObject<RtoTimer> ();
-  bp.rtoTimer->SetPdcId (m_tpdcConfig.pdcId);
-  bp.rtoTimer->SetSequenceNumber (seq);
-  bp.rtoTimer->SetTimeout (m_currentRto);
+  if (!TransmitPacket (m_sendBuffer[seq]))
+    {
+      m_sendBuffer.erase (seq);
+      return false;
+    }
 
-  // Add to send buffer
-  m_sendBuffer[seq] = bp;
-
-  // Start RTO timer
-  bp.rtoTimer->Start ();
-
-  LogDetailed ("BufferPacketForSending", "Packet buffered, seq: " +
-               std::to_string (seq) + ", buffer size: " + std::to_string (m_sendBuffer.size ()));
-
+  ArmTimeout (seq);
+  UpdateStatistics ();
   return true;
 }
 
 bool
 Tpdc::BufferPacketForReceiving (Ptr<Packet> packet, uint32_t seq)
 {
-  if (m_receiveBuffer.size () >= m_tpdcConfig.maxReceiveBufferSize)
+  ++m_rxDataPacketsTotal;
+  if (seq < m_nextReceiveSequence)
     {
-      m_tpdcStatistics.receiveBufferOverflows++;
-      HandleError (PdsErrorCode::PDC_FULL, "Receive buffer overflow");
-      return false;
+      PdcBase::UpdateStatistics (false, packet);
+      m_packetRxTrace (packet, m_tpdcConfig.pdcId);
+      ScheduleAcknowledgment ();
+      return true;
     }
 
-  // Check if sequence number is in receive window
   if (!IsInReceiveWindow (seq))
     {
       m_tpdcStatistics.outOfOrderPackets++;
       return false;
     }
 
-  // Create buffered packet
-  BufferedPacket bp (packet, false, false, seq);
+  PdcBase::UpdateStatistics (false, packet);
+  m_packetRxTrace (packet, m_tpdcConfig.pdcId);
 
-  // Add to receive buffer
-  m_receiveBuffer[seq] = bp;
+  m_highestObservedSequence = std::max (m_highestObservedSequence, seq);
 
-  // Update next expected sequence
   if (seq == m_nextReceiveSequence)
     {
-      m_nextReceiveSequence++;
+      ++m_nextReceiveSequence;
+      while (m_receiveBuffer.erase (m_nextReceiveSequence) > 0)
+        {
+          ++m_nextReceiveSequence;
+        }
+      m_receiveWindowBase = m_nextReceiveSequence;
+    }
+  else
+    {
+      if (m_receiveBuffer.size () >= m_tpdcConfig.maxReceiveBufferSize)
+        {
+          m_tpdcStatistics.receiveBufferOverflows++;
+          HandleError (PdsErrorCode::PDC_FULL, "Receive buffer overflow");
+          return false;
+        }
+      if (m_receiveBuffer.find (seq) == m_receiveBuffer.end ())
+        {
+          m_receiveBuffer.emplace (seq, BufferedPacket (packet->Copy (), false, false, seq));
+          m_tpdcStatistics.outOfOrderPackets++;
+        }
     }
 
-  // Schedule ACK
+  m_pendingSelectiveAckCount = static_cast<uint32_t> (m_receiveBuffer.size ());
+  m_pendingGapNackCount = (m_nextReceiveSequence <= m_highestObservedSequence &&
+                           !m_receiveBuffer.empty ()) ? 1u : 0u;
   ScheduleAcknowledgment ();
-
-  LogDetailed ("BufferPacketForReceiving", "Packet buffered, seq: " +
-               std::to_string (seq) + ", buffer size: " + std::to_string (m_receiveBuffer.size ()));
-
+  UpdateReceiveWindow ();
   return true;
 }
 
 void
 Tpdc::ProcessSendQueue (void)
 {
-  NS_LOG_FUNCTION (this);
-
   while (!m_sendQueue.empty () && IsInSendWindow (m_nextSendSequence))
     {
-      Ptr<Packet> packet = m_sendQueue.front ();
+      BufferedPacket buffered = m_sendQueue.front ();
       m_sendQueue.pop ();
 
-      // Create buffered packet for sending
-      BufferedPacket bp (packet, false, false, m_nextSendSequence);
+      const uint32_t seq = GenerateSequenceNumber ();
+      buffered.sequenceNumber = seq;
+      buffered.timestamp = Simulator::Now ();
+      m_sendBuffer[seq] = buffered;
 
-      // Create RTO timer
-      bp.rtoTimer = CreateObject<RtoTimer> ();
-      bp.rtoTimer->SetPdcId (m_tpdcConfig.pdcId);
-      bp.rtoTimer->SetSequenceNumber (m_nextSendSequence);
-      bp.rtoTimer->SetTimeout (m_currentRto);
-
-      // Add to send buffer and start timer
-      m_sendBuffer[m_nextSendSequence] = bp;
-      bp.rtoTimer->Start ();
-
-      m_nextSendSequence++;
+      if (TransmitPacket (m_sendBuffer[seq]))
+        {
+          ArmTimeout (seq);
+        }
+      else
+        {
+          m_sendBuffer.erase (seq);
+          break;
+        }
     }
+
+  UpdateStatistics ();
 }
 
 void
 Tpdc::ProcessReceiveQueue (void)
 {
-  NS_LOG_FUNCTION (this);
-
-  // Process in-order packets
-  while (m_receiveBuffer.find (m_nextReceiveSequence) != m_receiveBuffer.end ())
-    {
-      BufferedPacket& bp = m_receiveBuffer[m_nextReceiveSequence];
-
-      // Process packet
-      PdcBase::UpdateStatistics (false, bp.packet);
-      m_packetRxTrace (bp.packet, m_tpdcConfig.pdcId);
-
-      // Remove from buffer
-      m_receiveBuffer.erase (m_nextReceiveSequence);
-      m_nextReceiveSequence++;
-    }
-
-  // Update receive window
   UpdateReceiveWindow ();
 }
 
 void
 Tpdc::RetransmitPacket (uint32_t sequenceNumber)
 {
-  NS_LOG_FUNCTION (this << "Retransmitting packet " << sequenceNumber);
-
   auto it = m_sendBuffer.find (sequenceNumber);
   if (it == m_sendBuffer.end () || it->second.acknowledged)
     {
       return;
     }
 
-  BufferedPacket& bp = it->second;
-
-  // Check retransmission limit
-  if (bp.retransmissionCount >= m_tpdcConfig.maxRetransmissions)
+  BufferedPacket& packet = it->second;
+  if (packet.retransmissionCount >= m_tpdcConfig.maxRetransmissions)
     {
-      NS_LOG_WARN ("Maximum retransmissions reached for packet " << sequenceNumber);
       HandleError (PdsErrorCode::PROTOCOL_ERROR, "Maximum retransmissions exceeded");
       return;
     }
 
-  // Update retransmission info
-  bp.retransmissionCount++;
-  bp.lastRetransmission = Simulator::Now ();
-
-  // Update RTO with exponential backoff
-  Time newRto = m_currentRto * m_tpdcConfig.rtoBackoffMultiplier;
-  if (newRto > m_tpdcConfig.maxRto)
-    {
-      newRto = m_tpdcConfig.maxRto;
-    }
-  m_currentRto = newRto;
-
-  // Restart RTO timer
-  if (bp.rtoTimer)
-    {
-      bp.rtoTimer->SetTimeout (m_currentRto);
-      bp.rtoTimer->Restart ();
-    }
-
-  // Update statistics
+  packet.retransmissionCount++;
+  packet.lastRetransmission = Simulator::Now ();
   m_tpdcStatistics.retransmissions++;
-  if (bp.retransmissionCount == 1)
+  if (packet.retransmissionCount == 1)
     {
       m_tpdcStatistics.fastRetransmissions++;
     }
 
-  // Trace retransmission
-  m_retransmissionTrace (sequenceNumber, bp.retransmissionCount);
-
-  // Actually retransmit packet
-  TransmitPacket (bp);
-
-  LogDetailed ("RetransmitPacket", "Retransmitted packet " + std::to_string (sequenceNumber) +
-               ", attempt " + std::to_string (bp.retransmissionCount));
+  if (TransmitPacket (packet))
+    {
+      ArmTimeout (sequenceNumber);
+      m_retransmissionTrace (sequenceNumber, packet.retransmissionCount);
+    }
 }
 
 bool
-Tpdc::TransmitPacket (const BufferedPacket& bp)
+Tpdc::TransmitPacket (const BufferedPacket& bufferedPacket)
 {
-  NS_LOG_FUNCTION (this << "Transmitting packet, seq: " << bp.sequenceNumber);
-
-  // Create PDS header (suppress unused warning with (void))
-  PDSHeader header = CreatePdsHeader (bp.packet, bp.som, bp.eom);
-  (void)header; // Suppress unused variable warning
-  NS_LOG_DEBUG ("Created PDS header for packet transmission");
-
-  // In a real implementation, this would send through the network device
-  // For simulation, we assume success
-  if (GetNetDevice ())
+  Ptr<Packet> packet = bufferedPacket.packet ? bufferedPacket.packet->Copy () : nullptr;
+  if (!packet || !GetNetDevice ())
     {
-      PdcBase::UpdateStatistics (true, bp.packet);
-      m_packetTxTrace (bp.packet, m_tpdcConfig.pdcId);
-      return true;
+      return false;
     }
 
-  return false;
+  PDSHeader header = CreatePdsHeader (packet, bufferedPacket.som, bufferedPacket.eom);
+  header.SetSequenceNumber (bufferedPacket.sequenceNumber);
+  header.SetReliable (true);
+  packet->AddHeader (header);
+
+  PdcBase::UpdateStatistics (true, packet);
+  m_packetTxTrace (packet, m_tpdcConfig.pdcId);
+  ++m_txDataPacketsTotal;
+  return GetNetDevice ()->TransmitToChannel (packet,
+                                             m_tpdcConfig.localFep,
+                                             m_tpdcConfig.remoteFep);
 }
 
 void
@@ -646,69 +663,53 @@ Tpdc::ScheduleAcknowledgment (void)
   if (!m_ackEventId.IsPending ())
     {
       m_ackEventId = Simulator::Schedule (m_ackInterval,
-                                         &Tpdc::SendPendingAcknowledgments, this);
+                                          &Tpdc::SendPendingAcknowledgments,
+                                          this);
     }
 }
 
 void
 Tpdc::SendPendingAcknowledgments (void)
 {
-  if (m_receiveBuffer.empty ())
-    {
-      return;
-    }
-
-  // Create acknowledgment
-  Acknowledgment ack = CreateAcknowledgment ();
-
-  // Send acknowledgment
-  SendAcknowledgment (ack);
-
-  // Clear ACK queue
-  while (!m_ackQueue.empty ())
-    {
-      m_ackQueue.pop ();
-    }
+  SendAcknowledgment (CreateAcknowledgment ());
 }
 
 void
 Tpdc::UpdateSendWindow (void)
 {
-  // Send window is controlled by available buffer space and received ACKs
-  // Simple implementation: window size = config - buffer size
+  UpdateStatistics ();
 }
 
 void
 Tpdc::UpdateReceiveWindow (void)
 {
-  // Receive window is controlled by available buffer space
-  // Simple implementation: window size = config - buffer size
+  UpdateStatistics ();
 }
 
 void
 Tpdc::UpdateRtoEstimate (Time measuredRtt)
 {
-  NS_LOG_FUNCTION (this << "Measured RTT: " << measuredRtt.GetMilliSeconds () << "ms");
+  if (measuredRtt.IsZero ())
+    {
+      return;
+    }
 
   if (m_currentRtt.IsZero ())
     {
-      // First measurement
       m_currentRtt = measuredRtt;
       m_rttVariance = measuredRtt / 2;
     }
   else
     {
-      // Use Jacobson/Karels algorithm
-      Time error = measuredRtt - m_currentRtt;
-      m_rttVariance = Time (std::abs (error.GetDouble () * 0.25 + m_rttVariance.GetDouble () * 0.75));
-      m_currentRtt = Time (m_currentRtt.GetDouble () + error.GetDouble () * 0.125);
+      const double error = measuredRtt.GetSeconds () - m_currentRtt.GetSeconds ();
+      const double newRtt = m_currentRtt.GetSeconds () + error * 0.125;
+      const double newVariance = m_rttVariance.GetSeconds () * 0.75 + std::abs (error) * 0.25;
+      m_currentRtt = Seconds (newRtt);
+      m_rttVariance = Seconds (newVariance);
     }
 
-  // Calculate RTO
-  Time varianceComponent = std::max (Seconds (1.0), Time (m_rttVariance.GetDouble () * 4));
-  m_currentRto = m_currentRtt + varianceComponent;
-
-  // Clamp RTO to configured bounds
+  m_currentRto = m_currentRtt + Seconds (std::max (m_rttVariance.GetSeconds () * 4.0,
+                                                   m_tpdcConfig.initialRto.GetSeconds ()));
   if (m_currentRto < m_tpdcConfig.initialRto)
     {
       m_currentRto = m_tpdcConfig.initialRto;
@@ -722,46 +723,43 @@ Tpdc::UpdateRtoEstimate (Time measuredRtt)
 void
 Tpdc::HandleRtoTimeout (uint32_t sequenceNumber)
 {
-  NS_LOG_FUNCTION (this << "RTO timeout for packet " << sequenceNumber);
-
   m_tpdcStatistics.retransmissionTimeouts++;
-
-  // Retransmit the timed-out packet
   RetransmitPacket (sequenceNumber);
+}
+
+void
+Tpdc::HandleAckTimeout (void)
+{
+  SendPendingAcknowledgments ();
 }
 
 bool
 Tpdc::IsInSendWindow (uint32_t sequence) const
 {
-  uint32_t windowSize = m_tpdcConfig.sendWindowSize;
-  return (sequence >= m_sendWindowBase) && (sequence < m_sendWindowBase + windowSize);
+  return sequence >= m_sendWindowBase &&
+         sequence < m_sendWindowBase + m_tpdcConfig.sendWindowSize;
 }
 
 bool
 Tpdc::IsInReceiveWindow (uint32_t sequence) const
 {
-  uint32_t windowSize = m_tpdcConfig.receiveWindowSize;
-  return (sequence >= m_receiveWindowBase) && (sequence < m_receiveWindowBase + windowSize);
+  return sequence >= m_receiveWindowBase &&
+         sequence < m_receiveWindowBase + m_tpdcConfig.receiveWindowSize;
 }
 
 void
 Tpdc::CleanupAcknowledgedPackets (void)
 {
-  auto it = m_sendBuffer.begin ();
-  while (it != m_sendBuffer.end ())
+  for (auto it = m_sendBuffer.begin (); it != m_sendBuffer.end (); )
     {
       if (it->second.acknowledged)
         {
-          // Cancel timer
-          if (it->second.rtoTimer)
-            {
-              it->second.rtoTimer->Cancel ();
-            }
+          CancelTimeout (it->second);
           it = m_sendBuffer.erase (it);
         }
       else
         {
-          it++;
+          ++it;
         }
     }
 }
@@ -769,26 +767,14 @@ Tpdc::CleanupAcknowledgedPackets (void)
 Acknowledgment
 Tpdc::CreateAcknowledgment (void)
 {
-  // Find highest in-order sequence
-  uint32_t highestInOrder = m_receiveWindowBase;
-  while (m_receiveBuffer.find (highestInOrder) != m_receiveBuffer.end ())
+  Acknowledgment ack;
+  ack.ackSequence = (m_nextReceiveSequence > 0) ? (m_nextReceiveSequence - 1) : 0;
+  ack.receiveWindow = m_tpdcConfig.receiveWindowSize;
+  ack.cumulative = true;
+  if (m_nextReceiveSequence <= m_highestObservedSequence && !m_receiveBuffer.empty ())
     {
-      highestInOrder++;
+      ack.nackList.push_back (m_nextReceiveSequence);
     }
-
-  // Create ACK
-  Acknowledgment ack (highestInOrder - 1, m_tpdcConfig.receiveWindowSize,
-                     m_tpdcConfig.enableCumulativeAcks);
-
-  // Add NACKs for missing packets
-  for (uint32_t seq = m_receiveWindowBase; seq < highestInOrder; seq++)
-    {
-      if (m_receiveBuffer.find (seq) == m_receiveBuffer.end ())
-        {
-          ack.nackList.push_back (seq);
-        }
-    }
-
   return ack;
 }
 
@@ -801,8 +787,70 @@ Tpdc::GenerateSequenceNumber (void)
 void
 Tpdc::UpdateStatistics (void)
 {
-  m_tpdcStatistics.currentSendBufferSize = m_sendBuffer.size ();
-  m_tpdcStatistics.currentReceiveBufferSize = m_receiveBuffer.size ();
+  m_tpdcStatistics.currentSendBufferSize = static_cast<uint32_t> (m_sendBuffer.size ());
+  m_tpdcStatistics.currentReceiveBufferSize = static_cast<uint32_t> (m_receiveBuffer.size ());
+  m_sendBufferSizeMax = std::max (m_sendBufferSizeMax,
+                                  static_cast<uint32_t> (m_sendBuffer.size ()));
+}
+
+bool
+Tpdc::SendControlPacket (uint8_t flags,
+                         uint32_t cumulativeAck,
+                         uint32_t selectiveAck,
+                         uint32_t gapNack)
+{
+  if (!GetNetDevice ())
+    {
+      return false;
+    }
+
+  Ptr<Packet> packet = Create<Packet> ();
+  SoftUeTpdcControlTag controlTag;
+  controlTag.SetFlags (flags);
+  controlTag.SetCumulativeAck (cumulativeAck);
+  controlTag.SetSelectiveAck (selectiveAck);
+  controlTag.SetGapNack (gapNack);
+  packet->AddPacketTag (controlTag);
+
+  PDSHeader header = CreatePdsHeader (packet, false, false);
+  header.SetSequenceNumber (0);
+  header.SetReliable (true);
+  packet->AddHeader (header);
+
+  PdcBase::UpdateStatistics (true, packet);
+  ++m_txControlPacketsTotal;
+  return GetNetDevice ()->TransmitToChannel (packet,
+                                             m_tpdcConfig.localFep,
+                                             m_tpdcConfig.remoteFep);
+}
+
+void
+Tpdc::ArmTimeout (uint32_t sequenceNumber)
+{
+  auto it = m_sendBuffer.find (sequenceNumber);
+  if (it == m_sendBuffer.end ())
+    {
+      return;
+    }
+
+  CancelTimeout (it->second);
+  it->second.timeoutEvent = Simulator::Schedule (m_currentRto,
+                                                 &Tpdc::HandleRtoTimeout,
+                                                 this,
+                                                 sequenceNumber);
+}
+
+void
+Tpdc::CancelTimeout (BufferedPacket& packet)
+{
+  if (packet.timeoutEvent.IsPending ())
+    {
+      Simulator::Cancel (packet.timeoutEvent);
+    }
+  if (packet.rtoTimer)
+    {
+      packet.rtoTimer->Cancel ();
+    }
 }
 
 } // namespace ns3

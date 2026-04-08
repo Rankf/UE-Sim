@@ -56,7 +56,8 @@ PDSHeader::PDSHeader ()
     : m_pdcId (0),
       m_sequenceNum (0),
       m_som (false),
-      m_eom (false)
+      m_eom (false),
+      m_reliable (false)
 {
     NS_LOG_FUNCTION(this);
 }
@@ -73,7 +74,8 @@ PDSHeader::Print (std::ostream &os) const
     os << "PDSHeader[PDC=" << m_pdcId
        << ", Seq=" << m_sequenceNum
        << ", SOM=" << m_som
-       << ", EOM=" << m_eom << "]";
+       << ", EOM=" << m_eom
+       << ", REL=" << m_reliable << "]";
 }
 
 uint32_t
@@ -96,6 +98,7 @@ PDSHeader::Serialize (Buffer::Iterator start) const
     uint8_t flags = 0;
     if (m_som) flags |= 0x01;
     if (m_eom) flags |= 0x02;
+    if (m_reliable) flags |= 0x04;
     i.WriteU8(flags);
 }
 
@@ -111,6 +114,7 @@ PDSHeader::Deserialize (Buffer::Iterator start)
     uint8_t flags = i.ReadU8();
     m_som = (flags & 0x01) != 0;
     m_eom = (flags & 0x02) != 0;
+    m_reliable = (flags & 0x04) != 0;
 
     return GetSerializedSize();
 }
@@ -169,6 +173,20 @@ PDSHeader::GetEom (void) const
 {
     NS_LOG_FUNCTION(this);
     return m_eom;
+}
+
+void
+PDSHeader::SetReliable (bool reliable)
+{
+    NS_LOG_FUNCTION (this << reliable);
+    m_reliable = reliable;
+}
+
+bool
+PDSHeader::IsReliable (void) const
+{
+    NS_LOG_FUNCTION (this);
+    return m_reliable;
 }
 
 } // namespace ns3

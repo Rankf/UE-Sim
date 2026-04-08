@@ -8,10 +8,13 @@
 #include "ns3/nstime.h"
 #include "ns3/callback.h"
 #include "ns3/traced-callback.h"
+#include <map>
+#include <unordered_map>
 #include "pds-common.h"
 #include "../ses/ses-manager.h"
 #include "../pdc/pdc-base.h"
 #include "../pdc/ipdc.h"
+#include "../pdc/tpdc.h"
 
 namespace ns3 {
 
@@ -157,6 +160,69 @@ public:
      * @return Total number of active PDCs
      */
     uint32_t GetTotalActivePdcCount (void) const;
+    uint32_t GetActiveTpdcCount (void) const;
+    uint32_t GetTpdcInflightPackets (void) const;
+    uint32_t GetTpdcOutOfOrderPackets (void) const;
+    uint32_t GetTpdcPendingSacks (void) const;
+    uint32_t GetTpdcPendingGapNacks (void) const;
+    bool RegisterPostedReceive (uint64_t jobId,
+                                uint16_t msgId,
+                                uint32_t srcFep,
+                                uint64_t baseAddr,
+                                uint32_t length);
+    bool RegisterReadResponseTarget (uint64_t jobId,
+                                     uint16_t msgId,
+                                     uint32_t peerFep,
+                                     uint64_t baseAddr,
+                                     uint32_t length);
+    bool UnregisterReadResponseTarget (uint64_t jobId,
+                                       uint16_t msgId,
+                                       uint32_t peerFep);
+    PdcRxSemanticResult HandleIncomingSendPacket (uint16_t pdcId,
+                                                  const SoftUeHeaderTag& headerTag,
+                                                  const SoftUeMetadataTag& metadataTag,
+                                                  Ptr<Packet> packet);
+    PdcRxSemanticResult HandleIncomingReadResponsePacket (uint16_t pdcId,
+                                                          const SoftUeHeaderTag& headerTag,
+                                                          const SoftUeMetadataTag& metadataTag,
+                                                          Ptr<Packet> packet);
+    RxMessageProbe QueryRxMessageProbe (uint64_t jobId,
+                                        uint16_t msgId,
+                                        uint32_t srcFep,
+                                        OpType opcode = OpType::SEND) const;
+    UnexpectedSendProbe QueryUnexpectedSendProbe (uint64_t jobId,
+                                                  uint16_t msgId,
+                                                  uint32_t srcFep) const;
+    RudResourceStats GetRudResourceStats (void) const;
+    void FillRudRuntimeStats (RudRuntimeStats* stats) const;
+    std::vector<TpdcSessionProgressRecord> GetTpdcSessionProgressRecords (void) const;
+    bool HasPendingReadResponseState (void) const;
+    void ConfigureReceiveSemantics (uint32_t maxUnexpectedMessages,
+                                    uint32_t maxUnexpectedBytes,
+                                    uint32_t arrivalTrackingCapacity,
+                                    Time retryTimeout);
+    void ConfigureSemanticBudgets (uint32_t sendAdmissionMessages,
+                                   uint64_t sendAdmissionBytes,
+                                   uint32_t writeBudgetMessages,
+                                   uint64_t writeBudgetBytes,
+                                   uint32_t readResponderMessages,
+                                   uint64_t readResponseBytes);
+    void ConfigureControlPlane (bool creditGateEnabled,
+                                bool ackControlEnabled,
+                                Time creditRefreshInterval,
+                                uint32_t maxReadTracks,
+                                uint32_t initialCredits);
+    void SetPayloadMtu (uint32_t payloadMtu);
+    bool TryReserveSendAdmission (uint32_t peerFep, uint32_t payloadBytes);
+    void ReleaseSendAdmission (uint32_t peerFep, uint32_t payloadBytes);
+    bool TryReserveWriteBudget (uint32_t peerFep, uint32_t payloadBytes);
+    void ReleaseWriteBudget (uint32_t peerFep, uint32_t payloadBytes);
+    bool TryReserveReadResponderBudget (uint32_t peerFep, uint32_t payloadBytes);
+    void ReleaseReadResponderBudget (uint32_t peerFep, uint32_t payloadBytes);
+    bool TryConsumeSendCredits (uint32_t peerFep, uint32_t packetCredits);
+    void ReturnSendCredits (uint32_t peerFep, uint32_t packetCredits, bool ackControl);
+    void PruneReceiveState (void);
+    void ResetReceiveState (void);
 
     /**
      * @brief Handle PDC error
@@ -221,12 +287,34 @@ public:
     void Reset (void);
 
 private:
+    struct ReceivePdcKey
+    {
+        uint32_t sourceFep{0};
+        uint16_t pdcId{0};
+
+        bool operator== (const ReceivePdcKey& other) const
+        {
+            return sourceFep == other.sourceFep && pdcId == other.pdcId;
+        }
+    };
+
+    struct ReceivePdcKeyHash
+    {
+        std::size_t operator() (const ReceivePdcKey& key) const
+        {
+            std::size_t seed = std::hash<uint32_t>{}(key.sourceFep);
+            seed ^= static_cast<std::size_t> (key.pdcId) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            return seed;
+        }
+    };
+
     /**
      * @brief Get PDC by identifier
      * @param pdcId PDC identifier
      * @return Pointer to PDC
      */
     Ptr<PdcBase> GetPdc (uint16_t pdcId) const;
+    Ptr<PdcBase> GetReceivePdc (uint32_t sourceFep, uint16_t pdcId) const;
 
     /**
      * @brief Validate SES PDS request
@@ -241,7 +329,148 @@ private:
      * @param sourceFep Source FEP (remote endpoint)
      * @return true if PDC exists or was created
      */
-    bool EnsureReceivePdc (uint16_t pdcId, uint32_t sourceFep);
+    bool EnsureReceivePdc (uint16_t pdcId, uint32_t sourceFep, bool reliable);
+
+    struct ReceiveLookupKey
+    {
+        uint64_t jobId{0};
+        uint16_t msgId{0};
+        uint32_t peerFep{0};
+
+        bool operator== (const ReceiveLookupKey& other) const
+        {
+            return jobId == other.jobId &&
+                   msgId == other.msgId &&
+                   peerFep == other.peerFep;
+        }
+    };
+
+    struct ReceiveLookupKeyHash
+    {
+        std::size_t operator() (const ReceiveLookupKey& key) const
+        {
+            std::size_t seed = std::hash<uint64_t>{}(key.jobId);
+            seed ^= static_cast<std::size_t> (key.msgId) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<uint32_t>{}(key.peerFep) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            return seed;
+        }
+    };
+
+    struct PostedReceiveBinding
+    {
+        uint64_t baseAddr{0};
+        uint32_t length{0};
+        bool consumed{false};
+    };
+
+    struct ReadResponseTarget
+    {
+        uint64_t baseAddr{0};
+        uint32_t length{0};
+        int64_t registeredAtMs{0};
+    };
+
+    struct CompletedSendTombstone
+    {
+        uint32_t modifiedLength{0};
+        int64_t completedAtMs{0};
+    };
+
+    struct RudReceiveResourcePool
+    {
+        uint32_t maxUnexpectedMessages{64};
+        uint32_t maxUnexpectedBytes{1u << 20};
+        uint32_t maxArrivalBlocks{64};
+        uint32_t maxReadTracks{64};
+        uint32_t unexpectedMessagesInUse{0};
+        uint32_t unexpectedBytesInUse{0};
+        uint32_t arrivalBlocksInUse{0};
+        uint32_t readTracksInUse{0};
+        uint32_t unexpectedAllocFailures{0};
+        uint32_t arrivalAllocFailures{0};
+        uint32_t readTrackAllocFailures{0};
+    };
+
+    struct RudControlState
+    {
+        uint32_t sendCredits{0};
+        uint32_t recvCredits{0};
+        bool creditGateBlocked{false};
+        bool creditRefreshPending{false};
+        bool ackControlPending{false};
+        uint32_t pendingCreditGrant{0};
+        int64_t lastRefreshMs{0};
+        EventId refreshEvent;
+    };
+
+    struct SemanticBudgetState
+    {
+        uint32_t messageLimit{0};
+        uint64_t byteLimit{0};
+        uint32_t messagesInUse{0};
+        uint64_t bytesInUse{0};
+        uint32_t blockedCount{0};
+        uint32_t blockedByMessages{0};
+        uint32_t blockedByBytes{0};
+        uint32_t blockedByBoth{0};
+        uint32_t messagesInUsePeak{0};
+        uint64_t bytesInUsePeak{0};
+        uint32_t releaseCount{0};
+        uint64_t releaseBytesTotal{0};
+    };
+
+    ReceiveLookupKey BuildLookupKey (uint64_t jobId, uint16_t msgId, uint32_t peerFep) const;
+    RxMessageKey BuildRxMessageKey (OpType opcode,
+                                    uint64_t jobId,
+                                    uint16_t msgId,
+                                    uint32_t srcFep,
+                                    uint16_t pdcId) const;
+    int64_t NowMs (void) const;
+    uint32_t ComputePayloadPerPacket (void) const;
+    uint32_t ComputeExpectedChunks (uint32_t totalLength) const;
+    uint32_t ComputeChunkIndex (const SoftUeMetadataTag& metadataTag, uint32_t payloadPerPacket) const;
+    std::vector<uint8_t> CopyPacketBytes (Ptr<Packet> packet) const;
+    bool CopyPacketBytesToTarget (Ptr<Packet> packet,
+                                  uint64_t baseAddr,
+                                  uint32_t offset,
+                                  uint32_t maxLength) const;
+    void StoreChunkInContext (RxMessageContext& context,
+                              const SoftUeMetadataTag& metadataTag,
+                              Ptr<Packet> packet);
+    void TryPromoteUnexpectedToMatched (RxMessageContext& context);
+    void RetireContextResources (RxMessageContext& context);
+    void TryRetireCompletedContext (const RxMessageKey& key, RxMessageContext& context);
+    void PruneCompletedSendTombstones (void);
+    bool IsContextActive (const RxMessageContext& context) const;
+    UnexpectedSendProbe BuildUnexpectedProbe (const RxMessageContext& context) const;
+    bool ReserveArrivalBlock (RxMessageContext* context);
+    bool ReserveUnexpectedResources (RxMessageContext* context);
+    bool ReserveReadTrack (void);
+    void ReleaseReadTrack (void);
+    RudControlState& GetControlState (uint32_t peerFep);
+    uint32_t GetInitialCredits (void) const;
+    void ScheduleCreditRefresh (uint32_t peerFep, uint32_t minCredits);
+    void ExecuteCreditRefresh (uint32_t peerFep);
+
+    struct SessionKey
+    {
+        uint32_t destFep{0};
+        uint8_t tc{0};
+        uint8_t deliveryMode{0};
+
+        bool operator< (const SessionKey& other) const
+        {
+            if (destFep != other.destFep)
+            {
+                return destFep < other.destFep;
+            }
+            if (tc != other.tc)
+            {
+                return tc < other.tc;
+            }
+            return deliveryMode < other.deliveryMode;
+        }
+    };
 
     // Member variables
     Ptr<SesManager> m_sesManager;                        ///< Associated SES manager
@@ -250,9 +479,38 @@ private:
     bool m_statisticsEnabled;                            ///< Statistics collection enabled flag
 
     // PDC Management
-    std::map<uint16_t, Ptr<PdcBase>> m_pdcs;             ///< Active PDCs indexed by PDC ID
+    std::map<uint16_t, Ptr<PdcBase>> m_pdcs;             ///< Active outgoing PDCs indexed by PDC ID
+    std::unordered_map<ReceivePdcKey, Ptr<PdcBase>, ReceivePdcKeyHash> m_receivePdcs; ///< Passive receive-side PDCs keyed by (sourceFep,pdcId)
+    std::map<SessionKey, uint16_t> m_outgoingSessions;   ///< Reused reliable sessions
+    std::unordered_map<ReceiveLookupKey, PostedReceiveBinding, ReceiveLookupKeyHash> m_postedReceives;
+    std::unordered_map<ReceiveLookupKey, ReadResponseTarget, ReceiveLookupKeyHash> m_readResponseTargets;
+    std::unordered_map<RxMessageKey, RxMessageContext, RxMessageKeyHash> m_rxMessageContexts;
+    std::unordered_map<RxMessageKey, CompletedSendTombstone, RxMessageKeyHash> m_completedSendTombstones;
+    std::unordered_map<ReceiveLookupKey, CompletedSendTombstone, ReceiveLookupKeyHash> m_completedSendLookupTombstones;
+    std::unordered_map<uint32_t, RudControlState> m_controlStates;
     uint16_t m_nextPdcId;                                ///< Next available PDC ID
     uint32_t m_maxPdcCount;                              ///< Maximum PDC count
+    uint32_t m_maxUnexpectedMessages;                    ///< Max active unexpected contexts
+    uint32_t m_maxUnexpectedBytes;                       ///< Max bytes reserved for unexpected contexts
+    uint32_t m_arrivalTrackingCapacity;                  ///< Max active arrival bitmaps
+    uint32_t m_currentUnexpectedBytes;                   ///< Bytes reserved by active unexpected contexts
+    uint32_t m_unexpectedAllocFailures;                  ///< Unexpected allocation failures
+    uint32_t m_staleCleanupCount;                        ///< Number of stale contexts reaped
+    Time m_receiveStateTimeout;                          ///< Context cleanup timeout baseline
+    uint32_t m_payloadMtu;                               ///< Explicit semantic payload MTU (0 = derive)
+    RudReceiveResourcePool m_receivePool;
+    SemanticBudgetState m_sendAdmissionBudget;
+    SemanticBudgetState m_writeBudget;
+    SemanticBudgetState m_readResponderBudget;
+    bool m_creditGateEnabled;
+    bool m_ackControlEnabled;
+    Time m_creditRefreshInterval;
+    uint32_t m_initialCredits;
+    uint32_t m_creditRefreshSent;
+    uint32_t m_ackCtrlExtSent;
+    uint32_t m_creditGateBlockedCount;
+    uint32_t m_sackSent;
+    uint32_t m_gapNackSent;
 
     // Performance optimization: track free PDC IDs using a bitmap and queue
     static const uint16_t MAX_PDC_ID = 65535;             ///< Maximum PDC ID value

@@ -134,32 +134,29 @@ ExtendedOperationMetadata::ToString (void) const
 }
 
 uint32_t
-ExtendedOperationMetadata::CalculatePacketCount (uint32_t mtu) const
+ExtendedOperationMetadata::CalculatePacketCount (uint32_t payloadCapacity) const
 {
-  NS_LOG_FUNCTION (this << mtu);
+  NS_LOG_FUNCTION (this << payloadCapacity);
 
-  // Conservative header overhead: PDS + SES + lower layers (e.g. Ethernet)
-  const uint32_t kHeaderOverhead = 128u;
   uint32_t payloadLen = static_cast<uint32_t> (payload.length);
   if (payloadLen == 0)
     {
       return 1;
     }
-  if (mtu <= kHeaderOverhead)
+  if (payloadCapacity == 0)
     {
-      NS_LOG_WARN ("MTU " << mtu << " <= header overhead " << kHeaderOverhead << ", using 1 packet");
+      NS_LOG_WARN ("payloadCapacity is 0, using 1 packet");
       return 1;
     }
-  uint32_t payloadPerPacket = mtu - kHeaderOverhead;
-  uint32_t n = (payloadLen + payloadPerPacket - 1) / payloadPerPacket;
+  uint32_t n = (payloadLen + payloadCapacity - 1) / payloadCapacity;
   return n;
 }
 
 bool
-ExtendedOperationMetadata::RequiresFragmentation (uint32_t mtu) const
+ExtendedOperationMetadata::RequiresFragmentation (uint32_t payloadCapacity) const
 {
-  NS_LOG_FUNCTION (this << mtu);
-  return CalculatePacketCount (mtu) > 1;
+  NS_LOG_FUNCTION (this << payloadCapacity);
+  return CalculatePacketCount (payloadCapacity) > 1;
 }
 
 } // namespace ns3

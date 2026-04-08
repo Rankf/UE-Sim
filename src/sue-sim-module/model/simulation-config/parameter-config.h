@@ -58,24 +58,27 @@ struct FineGrainedTrafficFlow
     uint32_t destXpuId;           //!< Destination XPU ID
     uint32_t sueId;               //!< SUE ID to use for sending
     uint32_t suePort;             //!< SUE port to use for sending
+    uint32_t destPort;            //!< Optional destination port in soft_ue_truth mode
     double dataRate;              //!< Data rate for this flow (Mbps)
     uint32_t totalBytes;          //!< Total bytes to send for this flow
     uint8_t vcId;                 //!< Virtual channel ID (0-3, optional)
     double startTime;             //!< Start time relative to clientStart (seconds, parsed from ns in CSV)
+    bool hasExplicitDestPort;     //!< Whether destPort was explicitly provided by config
 
     /**
      * \brief Constructor
      */
     FineGrainedTrafficFlow () : sourceXpuId(0), destXpuId(0), sueId(0), suePort(0),
-                               dataRate(0.0), totalBytes(0), vcId(0), startTime(0.0) {}
+                               destPort(0), dataRate(0.0), totalBytes(0), vcId(0), startTime(0.0),
+                               hasExplicitDestPort(false) {}
 
     /**
      * \brief Constructor with parameters
      */
     FineGrainedTrafficFlow (uint32_t src, uint32_t dst, uint32_t sue, uint32_t port,
                            double rate, uint32_t bytes, uint8_t vc = 0, double start = 0.0)
-        : sourceXpuId(src), destXpuId(dst), sueId(sue), suePort(port),
-          dataRate(rate), totalBytes(bytes), vcId(vc), startTime(start) {}
+        : sourceXpuId(src), destXpuId(dst), sueId(sue), suePort(port), destPort(0),
+          dataRate(rate), totalBytes(bytes), vcId(vc), startTime(start), hasExplicitDestPort(false) {}
 };
 
 /**
@@ -85,7 +88,8 @@ struct TrafficConfig
 {
     uint32_t transactionSize;     //!< Transaction size (bytes)
     uint32_t maxBurstSize;        //!< Maximum burst size (bytes)
-    uint32_t Mtu;                 //!< Maximum transmission unit
+    uint32_t Mtu;                 //!< Device/link MTU including headers
+    uint32_t PayloadMtu;          //!< UEC semantic payload MTU for soft_ue_truth
     uint8_t vcNum;                //!< Number of virtual channels
     double threadRate;            //!< Thread rate (Mbps)
     uint32_t totalBytesToSend;    //!< Total bytes to send (MB)
@@ -236,6 +240,47 @@ struct SueSimulationConfig
     DelayConfig delay;          //!< Delay-related parameters
     LlrConfig llr;              //!< Llr related parameters
     LoggingConfig logging;      //!< Logging configuration parameters
+    std::string systemScenarioMode; //!< System scenario mode: legacy_sue | soft_ue_truth | soft_ue_fabric
+    std::string truthExperimentClass; //!< Truth-backed experiment class: semantic_demo|system_smoke|system_pressure
+    std::string truthPlannerMode; //!< Optional truth planner override: auto|uniform|striped
+    bool enableSoftUeObserver; //!< Enable SoftUeObserverHelper on truth-backed scenarios
+    bool enableSoftUeProtocolLogging; //!< Enable protocol CSV logging via PerformanceLogger
+    uint32_t truthFlowCount; //!< Maximum number of truth-backed flows for uniform planner
+    uint32_t truthOpsPerFlow; //!< Number of operations per truth flow
+    std::string truthPressureProfile; //!< Truth-backed pressure profile: baseline|credit_pressure|lossy|mixed
+    uint32_t truthSendPercent; //!< SEND mix percentage for generated truth operations
+    uint32_t truthWritePercent; //!< WRITE mix percentage for generated truth operations
+    uint32_t truthReadPercent; //!< READ mix percentage for generated truth operations
+    uint32_t truthPayloadBytes; //!< Payload size for generated truth operations
+    uint32_t truthUnexpectedMessages; //!< Truth-path unexpected message limit
+    uint32_t truthUnexpectedBytes; //!< Truth-path unexpected bytes limit
+    uint32_t truthArrivalBlocks; //!< Truth-path arrival tracking limit
+    uint32_t truthReadTracks; //!< Truth-path read tracking limit
+    double truthDropRate; //!< Truth-path packet drop rate for lossy pressure profiles
+    uint64_t truthReorderWindowNs; //!< Truth-path reorder hold window in nanoseconds
+    uint64_t truthExtraDelayNs; //!< Truth-path extra link delay in nanoseconds
+    std::string truthLinkDataRate; //!< Truth-path shared fabric data rate
+    uint64_t truthOpSpacingNs; //!< Truth-path generated operation spacing in nanoseconds (0 uses profile default)
+    uint32_t truthInitialCredits; //!< Truth-path initial send credits per peer (0 uses soft-ue default)
+    uint64_t truthCreditRefreshIntervalNs; //!< Truth-path credit refresh interval in nanoseconds (0 uses default)
+    uint32_t truthSendAdmissionMessages; //!< Truth-path SEND admission message budget
+    uint64_t truthSendAdmissionBytes; //!< Truth-path SEND admission byte budget
+    uint32_t truthWriteBudgetMessages; //!< Truth-path WRITE target-budget message limit
+    uint64_t truthWriteBudgetBytes; //!< Truth-path WRITE target-budget byte limit
+    uint32_t truthReadResponderMessages; //!< Truth-path READ responder message budget
+    uint64_t truthReadResponseBytes; //!< Truth-path READ response byte budget
+    uint64_t truthRetryTimeoutNs; //!< Truth-path semantic retry timeout in nanoseconds (0 uses default)
+    bool truthRequireFailureEvidence; //!< Require pressure profiles to surface control/resource/packet evidence
+    bool truthProtocolCsvRequired; //!< Whether truth-backed runs require protocol CSV data
+    std::string fabricTopologyMode; //!< Fabric topology mode: shared_truth | explicit_multipath
+    std::string fabricEndpointMode; //!< Fabric endpoint layout: six_endpoint | six_by_six
+    uint32_t fabricPathCount; //!< Explicit fabric path count
+    std::string fabricPathDataRate; //!< Explicit fabric per-path data rate
+    std::string fabricLinkDelay; //!< Explicit fabric path propagation delay
+    bool fabricUseEcmpHash; //!< Whether explicit fabric uses stable ECMP hashing
+    bool fabricDynamicPathSelection; //!< Whether explicit fabric uses adaptive sticky per-flow path selection
+    bool fabricEnableEcnObservation; //!< Whether explicit fabric tracks ECN-style queue threshold crossings
+    std::string fabricTrafficPattern; //!< Explicit fabric traffic pattern: all_to_all | hotspot | incast
 
     /**
      * \brief Constructor with default values

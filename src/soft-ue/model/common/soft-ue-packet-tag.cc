@@ -229,7 +229,10 @@ uint32_t
 SoftUeMetadataTag::GetSerializedSize (void) const
 {
     NS_LOG_FUNCTION (this);
-    return sizeof (uint32_t) + sizeof (uint32_t) + sizeof (uint16_t) + sizeof (uint8_t);
+    return sizeof (uint32_t) * 5 +
+           sizeof (uint16_t) +
+           sizeof (uint8_t) * 4 +
+           sizeof (uint64_t) * 2;
 }
 
 void
@@ -240,6 +243,14 @@ SoftUeMetadataTag::Serialize (TagBuffer i) const
     i.WriteU32 (m_messageId);
     i.WriteU16 (m_resourceIndex);
     i.WriteU8 (m_reliable ? 1 : 0);
+    i.WriteU32 (m_requestLength);
+    i.WriteU32 (m_fragmentOffset);
+    i.WriteU64 (m_remoteAddress);
+    i.WriteU64 (m_remoteKey);
+    i.WriteU8 (m_flags);
+    i.WriteU8 (m_responseOpCode);
+    i.WriteU8 (m_returnCode);
+    i.WriteU32 (m_modifiedLength);
 }
 
 void
@@ -250,6 +261,14 @@ SoftUeMetadataTag::Deserialize (TagBuffer i)
     m_messageId = i.ReadU32 ();
     m_resourceIndex = i.ReadU16 ();
     m_reliable = (i.ReadU8 () != 0);
+    m_requestLength = i.ReadU32 ();
+    m_fragmentOffset = i.ReadU32 ();
+    m_remoteAddress = i.ReadU64 ();
+    m_remoteKey = i.ReadU64 ();
+    m_flags = i.ReadU8 ();
+    m_responseOpCode = i.ReadU8 ();
+    m_returnCode = i.ReadU8 ();
+    m_modifiedLength = i.ReadU32 ();
 }
 
 void
@@ -259,18 +278,46 @@ SoftUeMetadataTag::Print (std::ostream &os) const
     os << "SoftUeMetadataTag [opType=" << (uint32_t)m_opType
        << ", messageId=" << m_messageId
        << ", resourceIndex=" << m_resourceIndex
-       << ", reliable=" << (m_reliable ? "true" : "false") << "]";
+       << ", reliable=" << (m_reliable ? "true" : "false")
+       << ", requestLength=" << m_requestLength
+       << ", fragmentOffset=" << m_fragmentOffset
+       << ", remoteAddress=" << m_remoteAddress
+       << ", remoteKey=" << m_remoteKey
+       << ", flags=" << static_cast<uint32_t> (m_flags)
+       << ", responseOpCode=" << static_cast<uint32_t> (m_responseOpCode)
+       << ", returnCode=" << static_cast<uint32_t> (m_returnCode)
+       << ", modifiedLength=" << m_modifiedLength << "]";
 }
 
 SoftUeMetadataTag::SoftUeMetadataTag ()
-    : m_opType (OpType::SEND), m_messageId (0), m_resourceIndex (0), m_reliable (false)
+    : m_opType (OpType::SEND),
+      m_messageId (0),
+      m_resourceIndex (0),
+      m_reliable (false),
+      m_requestLength (0),
+      m_fragmentOffset (0),
+      m_remoteAddress (0),
+      m_remoteKey (0),
+      m_flags (0),
+      m_responseOpCode (0),
+      m_returnCode (0),
+      m_modifiedLength (0)
 {
     NS_LOG_FUNCTION (this);
 }
 
 SoftUeMetadataTag::SoftUeMetadataTag (const OperationMetadata& metadata)
     : m_opType (metadata.op_type), m_messageId (metadata.messages_id),
-      m_resourceIndex (metadata.res_index), m_reliable (false)  // Default to false since not in struct
+      m_resourceIndex (metadata.res_index), m_reliable (metadata.delivery_mode == 0),
+      m_requestLength (static_cast<uint32_t> (metadata.payload.length)),
+      m_fragmentOffset (0),
+      m_remoteAddress (metadata.op_type == OpType::READ ? metadata.payload.imm_data
+                                                        : metadata.payload.start_addr),
+      m_remoteKey (metadata.memory.rkey),
+      m_flags (metadata.is_retry ? SOFT_UE_METADATA_RETRY : 0),
+      m_responseOpCode (0),
+      m_returnCode (0),
+      m_modifiedLength (0)
 {
     NS_LOG_FUNCTION (this << (uint32_t)m_opType << m_messageId << m_resourceIndex << m_reliable);
 }
@@ -329,6 +376,258 @@ SoftUeMetadataTag::SetReliable (bool reliable)
 {
     NS_LOG_FUNCTION (this << reliable);
     m_reliable = reliable;
+}
+
+uint32_t
+SoftUeMetadataTag::GetRequestLength (void) const
+{
+    return m_requestLength;
+}
+
+void
+SoftUeMetadataTag::SetRequestLength (uint32_t requestLength)
+{
+    m_requestLength = requestLength;
+}
+
+uint32_t
+SoftUeMetadataTag::GetFragmentOffset (void) const
+{
+    return m_fragmentOffset;
+}
+
+void
+SoftUeMetadataTag::SetFragmentOffset (uint32_t fragmentOffset)
+{
+    m_fragmentOffset = fragmentOffset;
+}
+
+uint64_t
+SoftUeMetadataTag::GetRemoteAddress (void) const
+{
+    return m_remoteAddress;
+}
+
+void
+SoftUeMetadataTag::SetRemoteAddress (uint64_t remoteAddress)
+{
+    m_remoteAddress = remoteAddress;
+}
+
+uint64_t
+SoftUeMetadataTag::GetRemoteKey (void) const
+{
+    return m_remoteKey;
+}
+
+void
+SoftUeMetadataTag::SetRemoteKey (uint64_t remoteKey)
+{
+    m_remoteKey = remoteKey;
+}
+
+uint8_t
+SoftUeMetadataTag::GetFlags (void) const
+{
+    return m_flags;
+}
+
+void
+SoftUeMetadataTag::SetFlags (uint8_t flags)
+{
+    m_flags = flags;
+}
+
+bool
+SoftUeMetadataTag::IsResponse (void) const
+{
+    return (m_flags & SOFT_UE_METADATA_RESPONSE) != 0;
+}
+
+void
+SoftUeMetadataTag::SetIsResponse (bool isResponse)
+{
+    if (isResponse)
+    {
+        m_flags |= SOFT_UE_METADATA_RESPONSE;
+    }
+    else
+    {
+        m_flags &= ~SOFT_UE_METADATA_RESPONSE;
+    }
+}
+
+bool
+SoftUeMetadataTag::IsRetry (void) const
+{
+    return (m_flags & SOFT_UE_METADATA_RETRY) != 0;
+}
+
+void
+SoftUeMetadataTag::SetIsRetry (bool isRetry)
+{
+    if (isRetry)
+    {
+        m_flags |= SOFT_UE_METADATA_RETRY;
+    }
+    else
+    {
+        m_flags &= ~SOFT_UE_METADATA_RETRY;
+    }
+}
+
+uint8_t
+SoftUeMetadataTag::GetResponseOpCode (void) const
+{
+    return m_responseOpCode;
+}
+
+void
+SoftUeMetadataTag::SetResponseOpCode (uint8_t opcode)
+{
+    m_responseOpCode = opcode;
+}
+
+uint8_t
+SoftUeMetadataTag::GetReturnCode (void) const
+{
+    return m_returnCode;
+}
+
+void
+SoftUeMetadataTag::SetReturnCode (uint8_t returnCode)
+{
+    m_returnCode = returnCode;
+}
+
+uint32_t
+SoftUeMetadataTag::GetModifiedLength (void) const
+{
+    return m_modifiedLength;
+}
+
+void
+SoftUeMetadataTag::SetModifiedLength (uint32_t modifiedLength)
+{
+    m_modifiedLength = modifiedLength;
+}
+
+// ============================================================================
+// SoftUeTpdcControlTag Implementation
+// ============================================================================
+
+NS_OBJECT_ENSURE_REGISTERED (SoftUeTpdcControlTag);
+
+TypeId
+SoftUeTpdcControlTag::GetTypeId (void)
+{
+    NS_LOG_FUNCTION_NOARGS ();
+    static TypeId tid = TypeId ("ns3::SoftUeTpdcControlTag")
+        .SetParent<Tag> ()
+        .SetGroupName ("SoftUe")
+        .AddConstructor<SoftUeTpdcControlTag> ();
+    return tid;
+}
+
+TypeId
+SoftUeTpdcControlTag::GetInstanceTypeId (void) const
+{
+    NS_LOG_FUNCTION (this);
+    return GetTypeId ();
+}
+
+uint32_t
+SoftUeTpdcControlTag::GetSerializedSize (void) const
+{
+    NS_LOG_FUNCTION (this);
+    return sizeof (uint8_t) + sizeof (uint32_t) * 3;
+}
+
+void
+SoftUeTpdcControlTag::Serialize (TagBuffer i) const
+{
+    NS_LOG_FUNCTION (this << &i);
+    i.WriteU8 (m_flags);
+    i.WriteU32 (m_cumulativeAck);
+    i.WriteU32 (m_selectiveAck);
+    i.WriteU32 (m_gapNack);
+}
+
+void
+SoftUeTpdcControlTag::Deserialize (TagBuffer i)
+{
+    NS_LOG_FUNCTION (this << &i);
+    m_flags = i.ReadU8 ();
+    m_cumulativeAck = i.ReadU32 ();
+    m_selectiveAck = i.ReadU32 ();
+    m_gapNack = i.ReadU32 ();
+}
+
+void
+SoftUeTpdcControlTag::Print (std::ostream &os) const
+{
+    NS_LOG_FUNCTION (this << &os);
+    os << "SoftUeTpdcControlTag [flags=" << static_cast<uint32_t> (m_flags)
+       << ", cumulativeAck=" << m_cumulativeAck
+       << ", selectiveAck=" << m_selectiveAck
+       << ", gapNack=" << m_gapNack << "]";
+}
+
+SoftUeTpdcControlTag::SoftUeTpdcControlTag ()
+    : m_flags (0),
+      m_cumulativeAck (0),
+      m_selectiveAck (0),
+      m_gapNack (0)
+{
+    NS_LOG_FUNCTION (this);
+}
+
+uint8_t
+SoftUeTpdcControlTag::GetFlags (void) const
+{
+    return m_flags;
+}
+
+void
+SoftUeTpdcControlTag::SetFlags (uint8_t flags)
+{
+    m_flags = flags;
+}
+
+uint32_t
+SoftUeTpdcControlTag::GetCumulativeAck (void) const
+{
+    return m_cumulativeAck;
+}
+
+void
+SoftUeTpdcControlTag::SetCumulativeAck (uint32_t ack)
+{
+    m_cumulativeAck = ack;
+}
+
+uint32_t
+SoftUeTpdcControlTag::GetSelectiveAck (void) const
+{
+    return m_selectiveAck;
+}
+
+void
+SoftUeTpdcControlTag::SetSelectiveAck (uint32_t ack)
+{
+    m_selectiveAck = ack;
+}
+
+uint32_t
+SoftUeTpdcControlTag::GetGapNack (void) const
+{
+    return m_gapNack;
+}
+
+void
+SoftUeTpdcControlTag::SetGapNack (uint32_t nack)
+{
+    m_gapNack = nack;
 }
 
 // ============================================================================
@@ -421,6 +720,20 @@ SoftUeTimingTag::GetExpectedDeliveryTime (void) const
 
 void
 SoftUeTimingTag::SetExpectedDeliveryTime (Time time)
+{
+    NS_LOG_FUNCTION (this << time.GetNanoSeconds ());
+    m_expectedDeliveryTime = time;
+}
+
+Time
+SoftUeTimingTag::GetAuxTimestamp (void) const
+{
+    NS_LOG_FUNCTION (this);
+    return m_expectedDeliveryTime;
+}
+
+void
+SoftUeTimingTag::SetAuxTimestamp (Time time)
 {
     NS_LOG_FUNCTION (this << time.GetNanoSeconds ());
     m_expectedDeliveryTime = time;

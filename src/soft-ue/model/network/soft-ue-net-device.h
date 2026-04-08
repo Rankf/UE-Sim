@@ -58,30 +58,6 @@ class SoftUeChannel;
 class UniformRandomVariable;
 
 /**
- * @struct SoftUeStats
- * @brief Soft-Ue network device statistics
- */
-struct SoftUeStats
-{
-    uint64_t totalBytesReceived;                 ///< Total bytes received
-    uint64_t totalBytesTransmitted;              ///< Total bytes transmitted
-    uint64_t totalPacketsReceived;               ///< Total packets received
-    uint64_t totalPacketsTransmitted;            ///< Total packets transmitted
-    uint64_t droppedPackets;                     ///< Number of dropped packets
-    uint64_t activePdcCount;                     ///< Current active PDC count
-    Time lastActivity;                           ///< Last activity timestamp
-    double averageLatency;                       ///< Average packet latency (ms)
-    double throughput;                           ///< Current throughput (Mbps)
-
-    SoftUeStats ()
-        : totalBytesReceived (0), totalBytesTransmitted (0),
-          totalPacketsReceived (0), totalPacketsTransmitted (0),
-          droppedPackets (0), activePdcCount (0),
-          lastActivity (Seconds (0)), averageLatency (0.0), throughput (0.0)
-    {}
-};
-
-/**
  * @struct SoftUeConfig
  * @brief Soft-Ue network device configuration
  */
@@ -227,6 +203,11 @@ public:
      * @return Device statistics
      */
     SoftUeStats GetStatistics (void) const;
+    SoftUeProtocolSnapshot GetProtocolSnapshot (void) const;
+    bool HasFailureSnapshot (void) const;
+    SoftUeFailureSnapshot GetLastFailureSnapshot (void) const;
+    std::vector<SoftUeDiagnosticRecord> GetRecentDiagnosticRecords (uint32_t limit) const;
+    std::vector<SoftUeCompletionRecord> GetRecentCompletionRecords (uint32_t limit) const;
 
     /**
      * @brief Reset device statistics
@@ -285,6 +266,10 @@ public:
      * @param packet Payload packet (PDS header already removed)
      */
     void DeliverReceivedPacket (Ptr<Packet> packet);
+    void NotifyProtocolCompletion (const SoftUeCompletionRecord& record);
+    void NotifyProtocolFailure (const SoftUeFailureSnapshot& snapshot);
+    void NotifyProtocolDiagnostic (const SoftUeDiagnosticRecord& record);
+    void NotifyProtocolTpdcSessionProgress (const TpdcSessionProgressRecord& record);
 
     // Traced callbacks
     TracedCallback<Ptr<Packet>, const Address&> m_macTxTrace;        ///< MAC transmit trace
@@ -293,6 +278,11 @@ public:
     TracedCallback<Ptr<Packet>, uint16_t> m_pdcRxTrace;            ///< PDC receive trace
     TracedCallback<const SoftUeStats&> m_statsTrace;                ///< Statistics trace
     TracedCallback<std::string, std::string> m_errorTrace;          ///< Error trace
+    TracedCallback<const SoftUeProtocolSnapshot&> m_protocolSnapshotTrace; ///< Protocol snapshot trace
+    TracedCallback<const SoftUeCompletionRecord&> m_protocolCompletionTrace; ///< Protocol completion trace
+    TracedCallback<const SoftUeFailureSnapshot&> m_protocolFailureTrace;    ///< Protocol failure trace
+    TracedCallback<const SoftUeDiagnosticRecord&> m_protocolDiagnosticTrace; ///< Protocol diagnostic trace
+    TracedCallback<const TpdcSessionProgressRecord&> m_protocolTpdcSessionProgressTrace; ///< TPDC session progress trace
 
 protected:
     /**
@@ -333,6 +323,8 @@ private:
     // Statistics and monitoring
     SoftUeStats m_statistics;                    ///< Device statistics
     EventId m_statsEventId;                      ///< Statistics update event ID
+    double m_totalObservedLatencyMs;             ///< Sum of observed packet latencies
+    uint64_t m_latencySampleCount;               ///< Number of packets with valid latency samples
 
     // Packet processing
     Ptr<DropTailQueue<Packet>> m_receiveQueue;   ///< Received packet queue (ns-3 Queue)

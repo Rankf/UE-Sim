@@ -33,6 +33,9 @@
 #include "ns3/traffic-generator-config.h"
 #include "ns3/load-balancer.h"
 #include "ns3/performance-logger.h"
+#include "ns3/soft-ue-observer-helper.h"
+#include "ns3/soft-ue-module.h"
+#include <memory>
 #include <vector>
 
 namespace ns3 {
@@ -50,6 +53,25 @@ class TopologyBuilder;
 class ApplicationDeployer
 {
 public:
+    struct TruthPlannedOperation
+    {
+        uint64_t jobId{0};
+        uint16_t msgId{0};
+        uint32_t srcXpuId{0};
+        uint32_t srcPort{0};
+        uint32_t dstXpuId{0};
+        uint32_t dstPort{0};
+        OpType opType{OpType::SEND};
+        uint32_t payloadBytes{0};
+        double startOffsetSeconds{0.0};
+        bool delayedReceive{false};
+        uint32_t receiveDelayMs{0};
+        bool expectValidationFailure{false};
+        bool forceMultiChunk{false};
+        std::string plannerMode;
+        std::string pressureProfile;
+    };
+
     /**
      * \brief Constructor
      */
@@ -66,6 +88,11 @@ public:
      * \param topologyBuilder Reference to topology builder
      */
     void DeployApplications (const SueSimulationConfig& config, TopologyBuilder& topologyBuilder);
+    bool HasSoftUeObserver () const;
+    SoftUeObserverHelper* GetSoftUeObserver ();
+    const SoftUeObserverHelper* GetSoftUeObserver () const;
+    const std::vector<TruthPlannedOperation>& GetTruthPlannedOperations () const;
+    std::string GetTruthPlannerMode () const;
 
 private:
     /**
@@ -81,6 +108,7 @@ private:
      * \param topologyBuilder Reference to topology builder
      */
     void InstallClientsAndTrafficGenerators (const SueSimulationConfig& config, TopologyBuilder& topologyBuilder);
+    void InstallSoftUeTruthScenario (const SueSimulationConfig& config, TopologyBuilder& topologyBuilder);
 
     /**
      * \brief Create and configure a SUE client
@@ -140,6 +168,28 @@ private:
      * \return Vector of parsed traffic flows
      */
     std::vector<FineGrainedTrafficFlow> ParseFineGrainedTrafficConfig (const SueSimulationConfig& config);
+    std::vector<TruthPlannedOperation> BuildTruthPlan (const SueSimulationConfig& config,
+                                                       TopologyBuilder& topologyBuilder);
+    std::vector<TruthPlannedOperation> BuildSemanticDemoTruthPlan (const SueSimulationConfig& config,
+                                                                   TopologyBuilder& topologyBuilder);
+    std::vector<TruthPlannedOperation> BuildUniformTruthPlan (const SueSimulationConfig& config,
+                                                              TopologyBuilder& topologyBuilder);
+    std::vector<TruthPlannedOperation> BuildStripedTruthPlan (const SueSimulationConfig& config,
+                                                              TopologyBuilder& topologyBuilder);
+    std::vector<TruthPlannedOperation> BuildFabricTruthPlan (const SueSimulationConfig& config,
+                                                             TopologyBuilder& topologyBuilder);
+    std::vector<TruthPlannedOperation> BuildFineGrainedTruthPlan (const SueSimulationConfig& config,
+                                                                  TopologyBuilder& topologyBuilder);
+    std::vector<TruthPlannedOperation> BuildTraceTruthPlan (const SueSimulationConfig& config,
+                                                            TopologyBuilder& topologyBuilder);
+    OpType SelectTruthOpType (const SueSimulationConfig& config, uint32_t ordinal) const;
+    uint32_t GetTruthPayloadBytes (const SueSimulationConfig& config) const;
+    bool ShouldDelayTruthReceive (const SueSimulationConfig& config, OpType opType, uint32_t ordinal) const;
+    uint32_t GetTruthReceiveDelayMs (const SueSimulationConfig& config, uint32_t ordinal) const;
+    double GetTruthOpSpacingSeconds (const SueSimulationConfig& config) const;
+    std::unique_ptr<SoftUeObserverHelper> m_softUeObserver;
+    std::vector<TruthPlannedOperation> m_truthPlannedOperations;
+    std::string m_truthPlannerMode;
 };
 
 } // namespace ns3

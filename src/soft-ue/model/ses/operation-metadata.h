@@ -126,17 +126,17 @@ public:
 
     /**
      * @brief Calculate required packet count for this operation
-     * @param mtu Maximum transmission unit
+     * @param payloadCapacity Semantic payload capacity per packet
      * @return Number of packets required
      */
-    uint32_t CalculatePacketCount (uint32_t mtu) const;
+    uint32_t CalculatePacketCount (uint32_t payloadCapacity) const;
 
     /**
      * @brief Check if this operation requires fragmentation
-     * @param mtu Maximum transmission unit
+     * @param payloadCapacity Semantic payload capacity per packet
      * @return true if fragmentation is required
      */
-    bool RequiresFragmentation (uint32_t mtu) const;
+    bool RequiresFragmentation (uint32_t payloadCapacity) const;
 
 private:
     uint32_t m_sourceNodeId;        ///< Source node ID in ns-3 simulation

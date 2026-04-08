@@ -39,6 +39,7 @@
 #include "ns3/packet.h"
 #include "ns3/drop-tail-queue.h"
 #include <unordered_map>
+#include <vector>
 #include "../common/transport-layer.h"
 #include "../ses/operation-metadata.h"
 #include "../pds/pds-common.h"
@@ -48,6 +49,106 @@ namespace ns3 {
 // Forward declarations
 class SesManager;
 class SoftUeNetDevice;
+
+enum class RxMessageMode : uint8_t
+{
+    DIRECT_EXPECTED = 0,
+    UNEXPECTED_BUFFERED = 1,
+    UNEXPECTED_MATCHED = 2,
+    READ_RESPONSE = 3,
+};
+
+struct RxMessageKey
+{
+    OpType opcode{OpType::SEND};
+    uint64_t jobId{0};
+    uint16_t msgId{0};
+    uint32_t srcFep{0};
+    uint16_t pdcId{0};
+
+    bool operator== (const RxMessageKey& other) const
+    {
+        return opcode == other.opcode &&
+               jobId == other.jobId &&
+               msgId == other.msgId &&
+               srcFep == other.srcFep &&
+               pdcId == other.pdcId;
+    }
+};
+
+struct RxMessageKeyHash
+{
+    std::size_t operator() (const RxMessageKey& key) const
+    {
+        std::size_t seed = std::hash<uint64_t>{}(key.jobId);
+        seed ^= static_cast<std::size_t> (key.msgId) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        seed ^= std::hash<uint32_t>{}(key.srcFep) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        seed ^= std::hash<uint16_t>{}(key.pdcId) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        seed ^= static_cast<std::size_t> (key.opcode) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        return seed;
+    }
+};
+
+struct RxMessageContext
+{
+    bool present{false};
+    OpType opcode{OpType::SEND};
+    uint32_t src_fep{0};
+    uint32_t dst_fep{0};
+    uint64_t job_id{0};
+    uint16_t msg_id{0};
+    uint16_t pdc_id{0};
+    uint32_t total_length{0};
+    uint32_t payload_per_packet{0};
+    uint32_t expected_chunks{0};
+    uint32_t chunks_done{0};
+    std::vector<bool> chunk_arrived;
+    RxMessageMode mode{RxMessageMode::DIRECT_EXPECTED};
+    bool semantic_accepted{false};
+    bool buffered_complete{false};
+    bool matched_to_recv{false};
+    bool completed{false};
+    bool failed{false};
+    int64_t created_at_ms{0};
+    int64_t last_activity_ms{0};
+    uint64_t target_base_addr{0};
+    uint32_t target_length{0};
+    std::vector<uint8_t> payload_buffer;
+    bool response_sent{false};
+    bool arrival_reserved{false};
+    bool unexpected_reserved{false};
+    bool retired{false};
+    int64_t retired_at_ms{0};
+};
+
+struct RxMessageProbe
+{
+    bool present{false};
+    RxMessageMode mode{RxMessageMode::DIRECT_EXPECTED};
+    OpType opcode{OpType::SEND};
+    uint32_t chunks_done{0};
+    uint32_t expected_chunks{0};
+    bool semantic_accepted{false};
+    bool buffered_complete{false};
+    bool matched_to_recv{false};
+    bool completed{false};
+    bool failed{false};
+    int64_t last_activity_ms{0};
+};
+
+struct PdcRxSemanticResult
+{
+    bool handled{false};
+    bool response_ready{false};
+    uint8_t response_opcode{0};
+    uint8_t return_code{0};
+    uint32_t modified_length{0};
+    bool semantic_accepted{false};
+    bool matched_to_recv{false};
+    bool delivery_complete{false};
+    bool failed{false};
+    uint64_t receive_consume_complete_ns{0};
+};
 
 /**
  * @struct UETPDSHeader

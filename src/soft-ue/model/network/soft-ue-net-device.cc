@@ -49,6 +49,26 @@ SoftUeNetDevice::GetTypeId (void)
                    UintegerValue (1500),
                    MakeUintegerAccessor (&SoftUeNetDevice::SetMaxPacketSize, &SoftUeNetDevice::GetMaxPacketSize),
                    MakeUintegerChecker<uint16_t> ())
+    .AddTraceSource ("ProtocolSnapshot",
+                     "Aggregated protocol/runtime snapshot for this Soft-UE device.",
+                     MakeTraceSourceAccessor (&SoftUeNetDevice::m_protocolSnapshotTrace),
+                     "ns3::SoftUeNetDevice::ProtocolSnapshotTrace")
+    .AddTraceSource ("ProtocolCompletion",
+                     "Semantic completion record emitted by this Soft-UE device.",
+                     MakeTraceSourceAccessor (&SoftUeNetDevice::m_protocolCompletionTrace),
+                     "ns3::SoftUeNetDevice::ProtocolCompletionTrace")
+    .AddTraceSource ("ProtocolFailure",
+                     "Latest protocol failure snapshot for this Soft-UE device.",
+                     MakeTraceSourceAccessor (&SoftUeNetDevice::m_protocolFailureTrace),
+                     "ns3::SoftUeNetDevice::ProtocolFailureTrace")
+    .AddTraceSource ("ProtocolDiagnostic",
+                     "Protocol diagnostic record emitted by this Soft-UE device.",
+                     MakeTraceSourceAccessor (&SoftUeNetDevice::m_protocolDiagnosticTrace),
+                     "ns3::SoftUeNetDevice::ProtocolDiagnosticTrace")
+    .AddTraceSource ("ProtocolTpdcSessionProgress",
+                     "TPDC per-session progress record emitted by this Soft-UE device.",
+                     MakeTraceSourceAccessor (&SoftUeNetDevice::m_protocolTpdcSessionProgressTrace),
+                     "ns3::SoftUeNetDevice::ProtocolTpdcSessionProgressTrace")
     ;
   return tid;
 }
@@ -58,7 +78,9 @@ SoftUeNetDevice::SoftUeNetDevice ()
     m_mtu (1500),
     m_linkUp (false),
     m_promisc (false),
-    m_localFep (1)
+    m_localFep (1),
+    m_totalObservedLatencyMs (0.0),
+    m_latencySampleCount (0)
 {
   NS_LOG_FUNCTION (this);
 
@@ -72,6 +94,8 @@ SoftUeNetDevice::SoftUeNetDevice ()
   // Set default configuration
   m_config = SoftUeConfig ();
   m_statistics = SoftUeStats ();
+  m_totalObservedLatencyMs = 0.0;
+  m_latencySampleCount = 0;
 }
 
 SoftUeNetDevice::~SoftUeNetDevice ()
@@ -114,8 +138,12 @@ SoftUeNetDevice::DoInitialize (void)
 {
   NS_LOG_FUNCTION (this);
 
-  // Initialize protocol stack
-  InitializeProtocolStack ();
+  // Nodes call DoInitialize when the simulator starts. Preserve the managers
+  // created during helper/device initialization instead of replacing live SES/PDS state.
+  if (!m_sesManager || !m_pdsManager)
+    {
+      InitializeProtocolStack ();
+    }
 
   // Setup callbacks
   SetupCallbacks ();
@@ -466,11 +494,66 @@ SoftUeNetDevice::GetStatistics (void) const
   return stats;
 }
 
+SoftUeProtocolSnapshot
+SoftUeNetDevice::GetProtocolSnapshot (void) const
+{
+  SoftUeProtocolSnapshot snapshot;
+  snapshot.timestamp_ns = Simulator::Now ().GetNanoSeconds ();
+  snapshot.node_id = m_node ? m_node->GetId () : 0;
+  snapshot.if_index = m_ifIndex;
+  snapshot.local_fep = m_localFep;
+  snapshot.device_stats = GetStatistics ();
+  if (m_sesManager)
+    {
+      snapshot.semantic_stats = m_sesManager->GetSoftUeSemanticStats ();
+      snapshot.resource_stats = m_sesManager->GetRudResourceStats ();
+      snapshot.runtime_stats = m_sesManager->GetRudRuntimeStats ();
+    }
+  Ptr<SoftUeChannel> channel = DynamicCast<SoftUeChannel> (m_channel);
+  if (channel)
+    {
+      channel->FillFabricRuntimeStats (&snapshot.runtime_stats);
+    }
+  return snapshot;
+}
+
+bool
+SoftUeNetDevice::HasFailureSnapshot (void) const
+{
+  return m_sesManager && m_sesManager->HasFailureSnapshot ();
+}
+
+SoftUeFailureSnapshot
+SoftUeNetDevice::GetLastFailureSnapshot (void) const
+{
+  return m_sesManager ? m_sesManager->GetLastFailureSnapshot () : SoftUeFailureSnapshot ();
+}
+
+std::vector<SoftUeDiagnosticRecord>
+SoftUeNetDevice::GetRecentDiagnosticRecords (uint32_t limit) const
+{
+  return m_sesManager ? m_sesManager->GetRecentDiagnosticRecords (limit)
+                      : std::vector<SoftUeDiagnosticRecord> ();
+}
+
+std::vector<SoftUeCompletionRecord>
+SoftUeNetDevice::GetRecentCompletionRecords (uint32_t limit) const
+{
+  return m_sesManager ? m_sesManager->GetRecentCompletionRecords (limit)
+                      : std::vector<SoftUeCompletionRecord> ();
+}
+
 void
 SoftUeNetDevice::ResetStatistics (void)
 {
   NS_LOG_FUNCTION (this);
   m_statistics = SoftUeStats ();
+  m_totalObservedLatencyMs = 0.0;
+  m_latencySampleCount = 0;
+  if (m_sesManager)
+    {
+      m_sesManager->ResetStatistics ();
+    }
   if (m_pdsManager)
     {
       m_pdsManager->ResetStatistics ();
@@ -526,6 +609,7 @@ SoftUeNetDevice::InitializeProtocolStack (void)
 
   // Create PDS manager
   m_pdsManager = CreateObject<PdsManager> ();
+  m_sesManager->SetPdsManager (m_pdsManager);
   m_pdsManager->SetSesManager (m_sesManager);
   m_pdsManager->SetNetDevice (this);
 
@@ -577,13 +661,13 @@ SoftUeNetDevice::UpdateStatistics (void)
   NS_LOG_FUNCTION (this);
 
   // Calculate throughput based on recent activity
-  Time now = Simulator::Now ();
-  if (m_statistics.lastActivity > Seconds (0))
+  const int64_t nowNs = Simulator::Now ().GetNanoSeconds ();
+  if (m_statistics.lastActivityNs > 0)
     {
-      Time deltaTime = now - m_statistics.lastActivity;
-      if (deltaTime > Seconds (0))
+      const int64_t deltaNs = nowNs - m_statistics.lastActivityNs;
+      if (deltaNs > 0)
         {
-          double deltaTimeSeconds = deltaTime.GetSeconds ();
+          double deltaTimeSeconds = static_cast<double> (deltaNs) / 1e9;
           if (deltaTimeSeconds > 0.001) // Avoid division by very small numbers
             {
               m_statistics.throughput = (m_statistics.totalBytesTransmitted * 8.0)
@@ -596,10 +680,13 @@ SoftUeNetDevice::UpdateStatistics (void)
         }
     }
 
-  // Update average latency (simplified)
-  if (m_statistics.totalPacketsReceived + m_statistics.totalPacketsTransmitted > 0)
+  if (m_latencySampleCount > 0)
     {
-      m_statistics.averageLatency = 0.5; // ms (placeholder calculation)
+      m_statistics.averageLatency = m_totalObservedLatencyMs / static_cast<double> (m_latencySampleCount);
+    }
+  else
+    {
+      m_statistics.averageLatency = 0.0;
     }
 
   // Update active PDC count
@@ -610,6 +697,24 @@ SoftUeNetDevice::UpdateStatistics (void)
 
   // Trace statistics
   m_statsTrace (m_statistics);
+  const SoftUeProtocolSnapshot snapshot = GetProtocolSnapshot ();
+  m_protocolSnapshotTrace (snapshot);
+  if (m_pdsManager)
+    {
+      const auto sessionRecords = m_pdsManager->GetTpdcSessionProgressRecords ();
+      for (auto record : sessionRecords)
+        {
+          record.timestamp_ns = snapshot.timestamp_ns;
+          record.node_id = snapshot.node_id;
+          record.if_index = snapshot.if_index;
+          record.local_fep = snapshot.local_fep;
+          NotifyProtocolTpdcSessionProgress (record);
+        }
+    }
+  if (m_config.enableStatistics)
+    {
+      ScheduleStatisticsUpdate ();
+    }
 }
 
 void
@@ -688,7 +793,7 @@ SoftUeNetDevice::TransmitToChannel (Ptr<Packet> packet, uint32_t srcFep, uint32_
   m_channel->Transmit (packet, this, srcFep, destFep);
   m_statistics.totalPacketsTransmitted++;
   m_statistics.totalBytesTransmitted += packet->GetSize ();
-  m_statistics.lastActivity = Simulator::Now ();
+  m_statistics.lastActivityNs = Simulator::Now ().GetNanoSeconds ();
   // PDS stats updated in SendPacketThroughPdc / ProcessReceivedPacket to avoid double-count
   m_macTxTrace (packet, CreateAddressFromFep (destFep));
   return true;
@@ -704,7 +809,13 @@ SoftUeNetDevice::DeliverReceivedPacket (Ptr<Packet> packet)
     }
   m_statistics.totalPacketsReceived++;
   m_statistics.totalBytesReceived += packet->GetSize ();
-  m_statistics.lastActivity = Simulator::Now ();
+  m_statistics.lastActivityNs = Simulator::Now ().GetNanoSeconds ();
+  SoftUeTimingTag timingTag;
+  if (packet->PeekPacketTag (timingTag))
+    {
+      m_totalObservedLatencyMs += (Simulator::Now () - timingTag.GetTimestamp ()).GetSeconds () * 1000.0;
+      m_latencySampleCount++;
+    }
   m_macRxTrace (packet, CreateAddressFromFep (m_localFep));
   bool enqueued = m_receiveQueue->Enqueue (packet);
   if (!enqueued)
@@ -714,6 +825,30 @@ SoftUeNetDevice::DeliverReceivedPacket (Ptr<Packet> packet)
       return;
     }
   ProcessReceiveQueue ();
+}
+
+void
+SoftUeNetDevice::NotifyProtocolCompletion (const SoftUeCompletionRecord& record)
+{
+  m_protocolCompletionTrace (record);
+}
+
+void
+SoftUeNetDevice::NotifyProtocolFailure (const SoftUeFailureSnapshot& snapshot)
+{
+  m_protocolFailureTrace (snapshot);
+}
+
+void
+SoftUeNetDevice::NotifyProtocolDiagnostic (const SoftUeDiagnosticRecord& record)
+{
+  m_protocolDiagnosticTrace (record);
+}
+
+void
+SoftUeNetDevice::NotifyProtocolTpdcSessionProgress (const TpdcSessionProgressRecord& record)
+{
+  m_protocolTpdcSessionProgressTrace (record);
 }
 
 uint16_t
