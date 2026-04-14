@@ -218,6 +218,7 @@ private:
     uint64_t BuildFlowKey (Ptr<Packet> packet, uint32_t sourceFep, uint32_t destFep) const;
     uint32_t GetDestinationFepForDevice (Ptr<NetDevice> device) const;
     bool IsResponsePacket (Ptr<Packet> packet) const;
+    bool IsGapNackControlPacket (Ptr<Packet> packet) const;
 };
 
 } // namespace ns3

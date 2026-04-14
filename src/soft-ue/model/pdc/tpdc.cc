@@ -1,6 +1,7 @@
 #include "tpdc.h"
 #include "../common/soft-ue-packet-tag.h"
 #include "../network/soft-ue-net-device.h"
+#include "../ses/ses-manager.h"
 #include "ns3/boolean.h"
 #include "ns3/log.h"
 #include "ns3/nstime.h"
@@ -138,6 +139,9 @@ Tpdc::Initialize (const PdcConfig& config)
   m_lastAckSequence = 0;
   m_sendBufferSizeMax = 0;
   m_ackAdvanceEventsTotal = 0;
+  m_gapNackObservedNsBySeq.clear ();
+  m_readGapContextByMissingSeq.clear ();
+  m_gapNackObservedNsBySeq.clear ();
 
   NS_LOG_INFO ("TPDC " << m_tpdcConfig.pdcId << " initialized successfully");
   return true;
@@ -179,6 +183,9 @@ Tpdc::HandleReceivedPacket (Ptr<Packet> packet, uint32_t sourceFep)
   SoftUeTpdcControlTag controlTag;
   if (packet->PeekPacketTag (controlTag))
     {
+      SoftUeRecoveryTag recoveryTag;
+      const Time gapNackSentTime =
+          packet->PeekPacketTag (recoveryTag) ? recoveryTag.GetGapNackSentTime () : Time::Max ();
       Acknowledgment ack;
       ack.ackSequence = controlTag.GetCumulativeAck ();
       ack.receiveWindow = m_tpdcConfig.receiveWindowSize;
@@ -189,7 +196,7 @@ Tpdc::HandleReceivedPacket (Ptr<Packet> packet, uint32_t sourceFep)
           ack.nackList.push_back (controlTag.GetGapNack ());
         }
 
-      bool handled = ProcessReceivedAcknowledgment (ack);
+      bool handled = ProcessReceivedAcknowledgment (ack, gapNackSentTime);
       if ((controlTag.GetFlags () & SOFT_UE_TPDC_CTRL_SACK) != 0 &&
           controlTag.GetSelectiveAck () != 0)
         {
@@ -311,7 +318,7 @@ Tpdc::SendAcknowledgment (const Acknowledgment& ack)
 }
 
 bool
-Tpdc::ProcessReceivedAcknowledgment (const Acknowledgment& ack)
+Tpdc::ProcessReceivedAcknowledgment (const Acknowledgment& ack, Time gapNackSentTime)
 {
   NS_LOG_FUNCTION (this << ack.ackSequence);
 
@@ -355,6 +362,42 @@ Tpdc::ProcessReceivedAcknowledgment (const Acknowledgment& ack)
       auto it = m_sendBuffer.find (nackSeq);
       if (it != m_sendBuffer.end () && !it->second.acknowledged)
         {
+          SoftUeMetadataTag metadataTag;
+          SoftUeHeaderTag headerTag;
+          const bool hasMetadataTag = it->second.packet && it->second.packet->PeekPacketTag (metadataTag);
+          const bool hasHeaderTag = it->second.packet && it->second.packet->PeekPacketTag (headerTag);
+          const bool isReadResponse =
+              hasMetadataTag &&
+              metadataTag.GetOperationType () == OpType::READ &&
+              metadataTag.GetResponseOpCode () ==
+                  static_cast<uint8_t> (ResponseOpCode::UET_RESPONSE_W_DATA);
+          if (gapNackSentTime != Time::Max () &&
+              m_gapNackObservedNsBySeq.find (nackSeq) == m_gapNackObservedNsBySeq.end ())
+            {
+              m_gapNackObservedNsBySeq[nackSeq] =
+                  static_cast<uint64_t> (gapNackSentTime.GetNanoSeconds ());
+            }
+          Ptr<SesManager> ses = GetNetDevice () ? GetNetDevice ()->GetSesManager () : GetSesManager ();
+          if (isReadResponse && ses)
+            {
+              ses->NotifyReadResponseGapNackObservedAtSender (
+                  hasHeaderTag ? headerTag.GetJobId () : 0,
+                  static_cast<uint16_t> (metadataTag.GetMessageId ()),
+                  hasHeaderTag ? headerTag.GetDestinationEndpoint () : 0,
+                  nackSeq,
+                  static_cast<uint64_t> (Simulator::Now ().GetNanoSeconds ()));
+              ses->NotifyExternalDiagnosticEvent (
+                  "TpdcReadGapNackObservedAtSender",
+                  "job=" + std::to_string (hasHeaderTag ? headerTag.GetJobId () : 0) +
+                      " msg=" + std::to_string (metadataTag.GetMessageId ()) +
+                      " peer=" + std::to_string (hasHeaderTag ? headerTag.GetDestinationEndpoint () : 0) +
+                      " missing_seq=" + std::to_string (nackSeq) +
+                      " observed_at_ns=" + std::to_string (Simulator::Now ().GetNanoSeconds ()) +
+                      " gap_nack_sent_at_ns=" +
+                      std::to_string (gapNackSentTime != Time::Max ()
+                                          ? gapNackSentTime.GetNanoSeconds ()
+                                          : 0));
+            }
           RetransmitPacket (nackSeq);
         }
     }
@@ -391,6 +434,8 @@ Tpdc::ClearSendBuffer (void)
       CancelTimeout (entry.second);
     }
   m_sendBuffer.clear ();
+  m_gapNackObservedNsBySeq.clear ();
+  m_readGapContextByMissingSeq.clear ();
   return count;
 }
 
@@ -520,11 +565,12 @@ bool
 Tpdc::BufferPacketForReceiving (Ptr<Packet> packet, uint32_t seq)
 {
   ++m_rxDataPacketsTotal;
+  PruneResolvedReadGapContexts ();
   if (seq < m_nextReceiveSequence)
     {
       PdcBase::UpdateStatistics (false, packet);
       m_packetRxTrace (packet, m_tpdcConfig.pdcId);
-      ScheduleAcknowledgment ();
+      ScheduleAcknowledgment (false);
       return true;
     }
 
@@ -566,7 +612,48 @@ Tpdc::BufferPacketForReceiving (Ptr<Packet> packet, uint32_t seq)
   m_pendingSelectiveAckCount = static_cast<uint32_t> (m_receiveBuffer.size ());
   m_pendingGapNackCount = (m_nextReceiveSequence <= m_highestObservedSequence &&
                            !m_receiveBuffer.empty ()) ? 1u : 0u;
-  ScheduleAcknowledgment ();
+  // When we observe a gap, emit ACK/NACK immediately so the sender can
+  // recover the missing packet without waiting for the periodic ACK tick.
+  const bool hasGap = (m_nextReceiveSequence <= m_highestObservedSequence &&
+                       !m_receiveBuffer.empty ());
+  if (hasGap)
+    {
+      SoftUeMetadataTag metadataTag;
+      SoftUeHeaderTag headerTag;
+      const bool hasMetadataTag = packet && packet->PeekPacketTag (metadataTag);
+      const bool hasHeaderTag = packet && packet->PeekPacketTag (headerTag);
+      const bool isReadResponse =
+          hasMetadataTag &&
+          metadataTag.GetOperationType () == OpType::READ &&
+          metadataTag.GetResponseOpCode () ==
+              static_cast<uint8_t> (ResponseOpCode::UET_RESPONSE_W_DATA);
+      const uint32_t missingSeq = m_nextReceiveSequence;
+      if (isReadResponse &&
+          m_readGapContextByMissingSeq.find (missingSeq) == m_readGapContextByMissingSeq.end ())
+        {
+          ReadGapDiagnosticContext context;
+          context.jobId = hasHeaderTag ? headerTag.GetJobId () : 0;
+          context.msgId = static_cast<uint16_t> (metadataTag.GetMessageId ());
+          context.peerFep = hasHeaderTag ? headerTag.GetSourceEndpoint () : m_tpdcConfig.remoteFep;
+          context.missingSeq = missingSeq;
+          context.observedSeq = seq;
+          context.gapDetectedAtNs = static_cast<uint64_t> (Simulator::Now ().GetNanoSeconds ());
+          m_readGapContextByMissingSeq[missingSeq] = context;
+          Ptr<SesManager> ses = GetNetDevice () ? GetNetDevice ()->GetSesManager () : GetSesManager ();
+          if (ses)
+            {
+              ses->NotifyExternalDiagnosticEvent (
+                  "TpdcReadGapDetected",
+                  "job=" + std::to_string (context.jobId) +
+                      " msg=" + std::to_string (context.msgId) +
+                      " peer=" + std::to_string (context.peerFep) +
+                      " missing_seq=" + std::to_string (context.missingSeq) +
+                      " observed_seq=" + std::to_string (context.observedSeq) +
+                      " detected_at_ns=" + std::to_string (context.gapDetectedAtNs));
+            }
+        }
+    }
+  ScheduleAcknowledgment (hasGap);
   UpdateReceiveWindow ();
   return true;
 }
@@ -614,6 +701,42 @@ Tpdc::RetransmitPacket (uint32_t sequenceNumber)
     }
 
   BufferedPacket& packet = it->second;
+  SoftUeMetadataTag metadataTag;
+  const bool hasMetadataTag = packet.packet && packet.packet->PeekPacketTag (metadataTag);
+  const bool isReadResponse =
+      hasMetadataTag &&
+      metadataTag.GetOperationType () == OpType::READ &&
+      metadataTag.GetResponseOpCode () ==
+          static_cast<uint8_t> (ResponseOpCode::UET_RESPONSE_W_DATA);
+  if (isReadResponse)
+    {
+      auto recoveryIt = m_gapNackObservedNsBySeq.find (sequenceNumber);
+      if (recoveryIt != m_gapNackObservedNsBySeq.end ())
+        {
+          packet.recoveryGapNackSentTime = NanoSeconds (recoveryIt->second);
+          packet.recoveryRetransmitTxTime = Simulator::Now ();
+        }
+      SoftUeHeaderTag headerTag;
+      const bool hasHeaderTag = packet.packet && packet.packet->PeekPacketTag (headerTag);
+      Ptr<SesManager> ses = GetNetDevice () ? GetNetDevice ()->GetSesManager () : GetSesManager ();
+      if (ses)
+        {
+          ses->NotifyReadResponseGapRetransmitTx (
+              hasHeaderTag ? headerTag.GetJobId () : 0,
+              static_cast<uint16_t> (metadataTag.GetMessageId ()),
+              hasHeaderTag ? headerTag.GetDestinationEndpoint () : 0,
+              sequenceNumber,
+              static_cast<uint64_t> (Simulator::Now ().GetNanoSeconds ()));
+          ses->NotifyExternalDiagnosticEvent (
+              "TpdcReadGapRetransmitTx",
+              "job=" + std::to_string (hasHeaderTag ? headerTag.GetJobId () : 0) +
+                  " msg=" + std::to_string (metadataTag.GetMessageId ()) +
+                  " peer=" + std::to_string (hasHeaderTag ? headerTag.GetDestinationEndpoint () : 0) +
+                  " missing_seq=" + std::to_string (sequenceNumber) +
+                  " retransmit_tx_at_ns=" +
+                  std::to_string (Simulator::Now ().GetNanoSeconds ()));
+        }
+    }
   if (packet.retransmissionCount >= m_tpdcConfig.maxRetransmissions)
     {
       HandleError (PdsErrorCode::PROTOCOL_ERROR, "Maximum retransmissions exceeded");
@@ -644,6 +767,21 @@ Tpdc::TransmitPacket (const BufferedPacket& bufferedPacket)
       return false;
     }
 
+  if (bufferedPacket.recoveryGapNackSentTime != Time::Max () ||
+      bufferedPacket.recoveryRetransmitTxTime != Time::Max ())
+    {
+      SoftUeRecoveryTag recoveryTag;
+      if (bufferedPacket.recoveryGapNackSentTime != Time::Max ())
+        {
+          recoveryTag.SetGapNackSentTime (bufferedPacket.recoveryGapNackSentTime);
+        }
+      if (bufferedPacket.recoveryRetransmitTxTime != Time::Max ())
+        {
+          recoveryTag.SetRetransmitTxTime (bufferedPacket.recoveryRetransmitTxTime);
+        }
+      packet->AddPacketTag (recoveryTag);
+    }
+
   PDSHeader header = CreatePdsHeader (packet, bufferedPacket.som, bufferedPacket.eom);
   header.SetSequenceNumber (bufferedPacket.sequenceNumber);
   header.SetReliable (true);
@@ -658,8 +796,18 @@ Tpdc::TransmitPacket (const BufferedPacket& bufferedPacket)
 }
 
 void
-Tpdc::ScheduleAcknowledgment (void)
+Tpdc::ScheduleAcknowledgment (bool immediate)
 {
+  if (immediate)
+    {
+      if (m_ackEventId.IsPending ())
+        {
+          Simulator::Cancel (m_ackEventId);
+        }
+      m_ackEventId = Simulator::ScheduleNow (&Tpdc::SendPendingAcknowledgments, this);
+      return;
+    }
+
   if (!m_ackEventId.IsPending ())
     {
       m_ackEventId = Simulator::Schedule (m_ackInterval,
@@ -754,6 +902,7 @@ Tpdc::CleanupAcknowledgedPackets (void)
     {
       if (it->second.acknowledged)
         {
+          m_gapNackObservedNsBySeq.erase (it->first);
           CancelTimeout (it->second);
           it = m_sendBuffer.erase (it);
         }
@@ -776,6 +925,22 @@ Tpdc::CreateAcknowledgment (void)
       ack.nackList.push_back (m_nextReceiveSequence);
     }
   return ack;
+}
+
+void
+Tpdc::PruneResolvedReadGapContexts (void)
+{
+  for (auto it = m_readGapContextByMissingSeq.begin (); it != m_readGapContextByMissingSeq.end ();)
+    {
+      if (it->first < m_nextReceiveSequence)
+        {
+          it = m_readGapContextByMissingSeq.erase (it);
+        }
+      else
+        {
+          ++it;
+        }
+    }
 }
 
 uint32_t
@@ -811,6 +976,30 @@ Tpdc::SendControlPacket (uint8_t flags,
   controlTag.SetSelectiveAck (selectiveAck);
   controlTag.SetGapNack (gapNack);
   packet->AddPacketTag (controlTag);
+  if ((flags & SOFT_UE_TPDC_CTRL_GAP_NACK) != 0 && gapNack != 0)
+    {
+      SoftUeRecoveryTag recoveryTag;
+      recoveryTag.SetGapNackSentTime (Simulator::Now ());
+      packet->AddPacketTag (recoveryTag);
+      auto ctxIt = m_readGapContextByMissingSeq.find (gapNack);
+      Ptr<SesManager> ses = GetNetDevice () ? GetNetDevice ()->GetSesManager () : GetSesManager ();
+      if (ctxIt != m_readGapContextByMissingSeq.end () && ses)
+        {
+          ses->NotifyReadResponseGapNackSent (ctxIt->second.jobId,
+                                              ctxIt->second.msgId,
+                                              ctxIt->second.peerFep,
+                                              gapNack,
+                                              static_cast<uint64_t> (Simulator::Now ().GetNanoSeconds ()));
+          ses->NotifyExternalDiagnosticEvent (
+              "TpdcReadGapNackSent",
+              "job=" + std::to_string (ctxIt->second.jobId) +
+                  " msg=" + std::to_string (ctxIt->second.msgId) +
+                  " peer=" + std::to_string (ctxIt->second.peerFep) +
+                  " missing_seq=" + std::to_string (gapNack) +
+                  " gap_detected_at_ns=" + std::to_string (ctxIt->second.gapDetectedAtNs) +
+                  " gap_nack_sent_at_ns=" + std::to_string (Simulator::Now ().GetNanoSeconds ()));
+        }
+    }
 
   PDSHeader header = CreatePdsHeader (packet, false, false);
   header.SetSequenceNumber (0);

@@ -457,10 +457,36 @@ public:
 
     Time GetAuxTimestamp (void) const;
     void SetAuxTimestamp (Time time);
+    Time GetDetailTimestamp (void) const;
+    void SetDetailTimestamp (Time time);
 
 private:
     Time m_timestamp;              ///< Creation timestamp
     Time m_expectedDeliveryTime;   ///< Expected delivery time
+    Time m_detailTimestamp;        ///< Additional timing detail
+};
+
+class SoftUeRecoveryTag : public Tag
+{
+public:
+    static TypeId GetTypeId (void);
+    virtual TypeId GetInstanceTypeId (void) const override;
+    virtual uint32_t GetSerializedSize (void) const override;
+    virtual void Serialize (TagBuffer i) const override;
+    virtual void Deserialize (TagBuffer i) override;
+    virtual void Print (std::ostream &os) const override;
+
+    SoftUeRecoveryTag ();
+
+    Time GetGapNackSentTime (void) const;
+    void SetGapNackSentTime (Time time);
+
+    Time GetRetransmitTxTime (void) const;
+    void SetRetransmitTxTime (Time time);
+
+private:
+    Time m_gapNackSentTime;
+    Time m_retransmitTxTime;
 };
 
 /**

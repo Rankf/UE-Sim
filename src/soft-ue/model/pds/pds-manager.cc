@@ -209,6 +209,17 @@ PdsManager::ComputeChunkIndex (const SoftUeMetadataTag& metadataTag, uint32_t pa
   return metadataTag.GetFragmentOffset () / payloadPerPacket;
 }
 
+uint32_t
+PdsManager::CountContiguousChunks (const RxMessageContext& context) const
+{
+  uint32_t contiguous = 0;
+  while (contiguous < context.chunk_arrived.size () && context.chunk_arrived[contiguous])
+    {
+      ++contiguous;
+    }
+  return contiguous;
+}
+
 std::vector<uint8_t>
 PdsManager::CopyPacketBytes (Ptr<Packet> packet) const
 {
@@ -482,12 +493,24 @@ PdsManager::RetireContextResources (RxMessageContext& context)
     }
   if (context.arrival_reserved)
     {
+      if (context.mode == RxMessageMode::READ_RESPONSE && m_sesManager)
+        {
+          m_sesManager->NotifyReadResponseArrivalContextReleased (
+              context.job_id,
+              context.msg_id,
+              context.src_fep,
+              static_cast<uint64_t> (Simulator::Now ().GetNanoSeconds ()));
+        }
       m_receivePool.arrivalBlocksInUse -= std::min<uint32_t> (1u, m_receivePool.arrivalBlocksInUse);
       context.arrival_reserved = false;
     }
   if (context.mode == RxMessageMode::READ_RESPONSE)
     {
-      ReleaseReadTrack ();
+      if (context.read_track_reserved)
+        {
+          ReleaseReadTrack ();
+          context.read_track_reserved = false;
+        }
     }
   context.payload_buffer.clear ();
   context.chunk_arrived.clear ();
@@ -576,6 +599,14 @@ PdsManager::TryRetireCompletedContext (const RxMessageKey& key, RxMessageContext
   if (context.mode == RxMessageMode::READ_RESPONSE)
     {
       context.completed = true;
+      if (m_sesManager)
+        {
+          m_sesManager->NotifyReadResponseTargetReleased (
+              context.job_id,
+              context.msg_id,
+              context.src_fep,
+              static_cast<uint64_t> (Simulator::Now ().GetNanoSeconds ()));
+        }
       m_readResponseTargets.erase (BuildLookupKey (context.job_id, context.msg_id, context.src_fep));
       RetireContextResources (context);
     }
@@ -888,15 +919,19 @@ PdsManager::RegisterReadResponseTarget (uint64_t jobId,
 {
   PruneReceiveState ();
   const ReceiveLookupKey lookup = BuildLookupKey (jobId, msgId, peerFep);
-  if (m_readResponseTargets.find (lookup) == m_readResponseTargets.end () && !ReserveReadTrack ())
-    {
-      return false;
-    }
   ReadResponseTarget target;
   target.baseAddr = baseAddr;
   target.length = length;
   target.registeredAtMs = NowMs ();
   m_readResponseTargets[lookup] = target;
+  if (m_sesManager)
+    {
+      m_sesManager->NotifyReadResponseTargetRegistered (
+          jobId,
+          msgId,
+          peerFep,
+          static_cast<uint64_t> (Simulator::Now ().GetNanoSeconds ()));
+    }
   return true;
 }
 
@@ -911,8 +946,15 @@ PdsManager::UnregisterReadResponseTarget (uint64_t jobId,
     {
       return false;
     }
+  if (m_sesManager)
+    {
+      m_sesManager->NotifyReadResponseTargetReleased (
+          jobId,
+          msgId,
+          peerFep,
+          static_cast<uint64_t> (Simulator::Now ().GetNanoSeconds ()));
+    }
   m_readResponseTargets.erase (targetIt);
-  ReleaseReadTrack ();
   return true;
 }
 
@@ -1111,6 +1153,15 @@ PdsManager::HandleIncomingReadResponsePacket (uint16_t pdcId,
                                               srcFep,
                                               pdcId);
   RxMessageContext& context = m_rxMessageContexts[key];
+  const bool noActiveContext = (!context.present || context.retired);
+  if (noActiveContext && m_sesManager)
+    {
+      m_sesManager->NotifyReadResponseFirstPacketNoContext (
+          jobId,
+          msgId,
+          srcFep,
+          static_cast<uint64_t> (Simulator::Now ().GetNanoSeconds ()));
+    }
   if (!context.present || context.retired)
     {
       context = RxMessageContext ();
@@ -1131,7 +1182,7 @@ PdsManager::HandleIncomingReadResponsePacket (uint16_t pdcId,
       context.target_length = targetIt->second.length;
       context.created_at_ms = NowMs ();
       context.last_activity_ms = context.created_at_ms;
-      if (!ReserveArrivalBlock (&context))
+      if (!ReserveReadTrack ())
         {
           result.handled = true;
           result.response_ready = true;
@@ -1141,9 +1192,98 @@ PdsManager::HandleIncomingReadResponsePacket (uint16_t pdcId,
           RetireContextResources (context);
           return result;
         }
+      context.read_track_reserved = true;
+      if (!ReserveArrivalBlock (&context))
+        {
+          if (m_sesManager)
+            {
+              m_sesManager->NotifyReadResponseArrivalBlockReserveFailed (
+                  jobId,
+                  msgId,
+                  srcFep,
+                  static_cast<uint64_t> (Simulator::Now ().GetNanoSeconds ()));
+            }
+          result.handled = true;
+          result.response_ready = true;
+          result.response_opcode = static_cast<uint8_t> (ResponseOpCode::UET_NACK);
+          result.return_code = static_cast<uint8_t> (ResponseReturnCode::RC_RESOURCE_EXHAUST);
+          context.failed = true;
+          RetireContextResources (context);
+          return result;
+        }
+      if (m_sesManager)
+        {
+          m_sesManager->NotifyReadResponseArrivalBlockReserved (
+              jobId,
+              msgId,
+              srcFep,
+              static_cast<uint64_t> (Simulator::Now ().GetNanoSeconds ()));
+        }
+    }
+
+  const uint32_t contiguousBefore = CountContiguousChunks (context);
+  const uint32_t payloadPerPacket = std::max<uint32_t> (1, context.payload_per_packet);
+  const uint32_t chunkIndex = ComputeChunkIndex (metadataTag, payloadPerPacket);
+  const bool firstArrival =
+      chunkIndex < context.chunk_arrived.size () && !context.chunk_arrived[chunkIndex];
+  if (!context.recovery_gap_tracked &&
+      !context.recovery_gap_completed &&
+      firstArrival &&
+      chunkIndex > contiguousBefore)
+    {
+      context.recovery_gap_tracked = true;
+      context.recovery_missing_chunk_index = contiguousBefore;
+      if (m_sesManager)
+        {
+          m_sesManager->NotifyReadResponseGapDetected (
+              jobId,
+              msgId,
+              srcFep,
+              contiguousBefore,
+              static_cast<uint64_t> (Simulator::Now ().GetNanoSeconds ()));
+        }
     }
 
   StoreChunkInContext (context, metadataTag, packet);
+  if (context.recovery_gap_tracked &&
+      !context.recovery_visible_recorded &&
+      firstArrival &&
+      chunkIndex == context.recovery_missing_chunk_index)
+    {
+      SoftUeRecoveryTag recoveryTag;
+      if (packet && packet->PeekPacketTag (recoveryTag))
+        {
+          if (m_sesManager)
+            {
+              m_sesManager->NotifyReadResponseRecoveryVisible (
+                  jobId,
+                  msgId,
+                  srcFep,
+                  chunkIndex,
+                  static_cast<uint64_t> (recoveryTag.GetGapNackSentTime ().GetNanoSeconds ()),
+                  static_cast<uint64_t> (recoveryTag.GetRetransmitTxTime ().GetNanoSeconds ()),
+                  static_cast<uint64_t> (Simulator::Now ().GetNanoSeconds ()));
+            }
+          context.recovery_visible_recorded = true;
+        }
+    }
+  const uint32_t contiguousAfter = CountContiguousChunks (context);
+  if (context.recovery_gap_tracked &&
+      !context.recovery_gap_completed &&
+      firstArrival &&
+      contiguousAfter > context.recovery_missing_chunk_index)
+    {
+      if (m_sesManager)
+        {
+          m_sesManager->NotifyReadResponseReassemblyUnblocked (
+              jobId,
+              msgId,
+              srcFep,
+              context.recovery_missing_chunk_index,
+              static_cast<uint64_t> (Simulator::Now ().GetNanoSeconds ()));
+        }
+      context.recovery_gap_completed = true;
+    }
   TryRetireCompletedContext (key, context);
 
   result.handled = true;
@@ -1523,6 +1663,14 @@ PdsManager::PruneReceiveState (void)
           context.failed = !context.completed;
           if (context.mode == RxMessageMode::READ_RESPONSE)
             {
+              if (m_sesManager)
+                {
+                  m_sesManager->NotifyReadResponseTargetReleased (
+                      context.job_id,
+                      context.msg_id,
+                      context.src_fep,
+                      static_cast<uint64_t> (Simulator::Now ().GetNanoSeconds ()));
+                }
               m_readResponseTargets.erase (BuildLookupKey (context.job_id, context.msg_id, context.src_fep));
             }
           RetireContextResources (context);

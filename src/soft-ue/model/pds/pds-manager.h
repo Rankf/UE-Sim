@@ -429,6 +429,7 @@ private:
     uint32_t ComputePayloadPerPacket (void) const;
     uint32_t ComputeExpectedChunks (uint32_t totalLength) const;
     uint32_t ComputeChunkIndex (const SoftUeMetadataTag& metadataTag, uint32_t payloadPerPacket) const;
+    uint32_t CountContiguousChunks (const RxMessageContext& context) const;
     std::vector<uint8_t> CopyPacketBytes (Ptr<Packet> packet) const;
     bool CopyPacketBytesToTarget (Ptr<Packet> packet,
                                   uint64_t baseAddr,

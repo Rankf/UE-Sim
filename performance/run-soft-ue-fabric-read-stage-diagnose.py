@@ -88,7 +88,11 @@ def build_stage_config(raw_config: dict[str, Any], *, output_dir: Path) -> Path:
 def stage_mean_map(row: dict[str, Any]) -> dict[str, float]:
     return {
         "responder-generate": float(row.get("read_stage_responder_budget_generate_mean_ns", 0.0)),
-        "first-visible": float(row.get("read_stage_first_response_visible_mean_ns", 0.0)),
+        "pending-response-dispatch": float(
+            row.get("read_stage_pending_response_queue_dispatch_mean_ns", 0.0)
+        ),
+        "first-packet-tx": float(row.get("read_stage_response_first_packet_tx_mean_ns", 0.0)),
+        "network-visibility": float(row.get("read_stage_network_return_visibility_mean_ns", 0.0)),
         "reassembly": float(row.get("read_stage_reassembly_complete_mean_ns", 0.0)),
         "terminal": float(row.get("read_stage_terminal_mean_ns", 0.0)),
     }
@@ -100,17 +104,53 @@ def classify_dominant_stage(row: dict[str, Any]) -> str:
     return f"{dominant}-dominant"
 
 
+def recovery_mean_map(row: dict[str, Any]) -> dict[str, float]:
+    return {
+        "detect-to-nack": float(row.get("read_recovery_detect_to_nack_mean_ns", 0.0)),
+        "nack-to-retransmit": float(row.get("read_recovery_nack_to_retransmit_mean_ns", 0.0)),
+        "retransmit-to-visible": float(
+            row.get("read_recovery_retransmit_to_first_visible_mean_ns", 0.0)
+        ),
+        "visible-to-unblocked": float(
+            row.get("read_recovery_first_visible_to_unblocked_mean_ns", 0.0)
+        ),
+    }
+
+
+def classify_dominant_recovery_stage(row: dict[str, Any]) -> str:
+    if int(row.get("read_recovery_sample_count", 0)) <= 0:
+        return "no-recovery-samples"
+    means = recovery_mean_map(row)
+    dominant = max(means.items(), key=lambda item: item[1])[0]
+    return f"{dominant}-dominant"
+
+
+def classify_dominant_failure_stage(row: dict[str, Any]) -> str:
+    value = str(row.get("read_recovery_failure_dominant_stage", "") or "")
+    return value if value else "no-failure-recovery-samples"
+
+
 def add_stage_shares(row: dict[str, Any]) -> None:
     means = stage_mean_map(row)
     total = sum(means.values())
     if total <= 0.0:
         row["read_stage_responder_generate_share_pct"] = 0.0
-        row["read_stage_first_visible_share_pct"] = 0.0
+        row["read_stage_pending_dispatch_share_pct"] = 0.0
+        row["read_stage_first_packet_tx_share_pct"] = 0.0
+        row["read_stage_network_visibility_share_pct"] = 0.0
         row["read_stage_reassembly_share_pct"] = 0.0
         row["read_stage_terminal_share_pct"] = 0.0
         return
     row["read_stage_responder_generate_share_pct"] = round(means["responder-generate"] * 100.0 / total, 6)
-    row["read_stage_first_visible_share_pct"] = round(means["first-visible"] * 100.0 / total, 6)
+    row["read_stage_pending_dispatch_share_pct"] = round(
+        means["pending-response-dispatch"] * 100.0 / total, 6
+    )
+    row["read_stage_first_packet_tx_share_pct"] = round(
+        means["first-packet-tx"] * 100.0 / total, 6
+    )
+    row["read_stage_network_visibility_share_pct"] = round(
+        means["network-visibility"] * 100.0 / total, 6
+    )
     row["read_stage_reassembly_share_pct"] = round(means["reassembly"] * 100.0 / total, 6)
     row["read_stage_terminal_share_pct"] = round(means["terminal"] * 100.0 / total, 6)
 
@@ -129,26 +169,169 @@ def render_report(report_path: Path, metadata: dict[str, Any], rows: list[dict[s
         "",
         "## Stage Breakdown",
         "",
-        "| case | goodput_gbps | completion_pct | samples | responder_generate_p95_us | first_visible_p95_us | reassembly_p95_us | terminal_p95_us | responder_share_pct | first_visible_share_pct | reassembly_share_pct | terminal_share_pct | late_response_total | dominant |",
+        "| case | goodput_gbps | completion_pct | samples | responder_generate_p95_us | pending_dispatch_p95_us | first_packet_tx_p95_us | network_visibility_p95_us | reassembly_p95_us | terminal_p95_us | responder_share_pct | pending_dispatch_share_pct | first_packet_tx_share_pct | network_visibility_share_pct | reassembly_share_pct | terminal_share_pct | late_response_total | dominant |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for row in rows:
         lines.append(
-            "| {case} | {goodput:.3f} | {completion:.3f} | {samples} | {generate_p95:.3f} | {visible_p95:.3f} | {reassembly_p95:.3f} | {terminal_p95:.3f} | {generate_share:.2f} | {visible_share:.2f} | {reassembly_share:.2f} | {terminal_share:.2f} | {late:.0f} | {dominant} |".format(
+            "| {case} | {goodput:.3f} | {completion:.3f} | {samples} | {generate_p95:.3f} | {pending_dispatch_p95:.3f} | {first_tx_p95:.3f} | {network_visibility_p95:.3f} | {reassembly_p95:.3f} | {terminal_p95:.3f} | {generate_share:.2f} | {pending_dispatch_share:.2f} | {first_tx_share:.2f} | {network_visibility_share:.2f} | {reassembly_share:.2f} | {terminal_share:.2f} | {late:.0f} | {dominant} |".format(
                 case=str(row["case_name"]),
                 goodput=float(row.get("semantic_goodput_mbps", 0.0)) / 1000.0,
                 completion=float(row.get("semantic_completion_rate_pct_final", 0.0)),
                 samples=int(row.get("read_stage_sample_count", 0)),
                 generate_p95=float(row.get("read_stage_responder_budget_generate_p95_ns", 0.0)) / 1000.0,
-                visible_p95=float(row.get("read_stage_first_response_visible_p95_ns", 0.0)) / 1000.0,
+                pending_dispatch_p95=float(
+                    row.get("read_stage_pending_response_queue_dispatch_p95_ns", 0.0)
+                )
+                / 1000.0,
+                first_tx_p95=float(row.get("read_stage_response_first_packet_tx_p95_ns", 0.0)) / 1000.0,
+                network_visibility_p95=float(
+                    row.get("read_stage_network_return_visibility_p95_ns", 0.0)
+                )
+                / 1000.0,
                 reassembly_p95=float(row.get("read_stage_reassembly_complete_p95_ns", 0.0)) / 1000.0,
                 terminal_p95=float(row.get("read_stage_terminal_p95_ns", 0.0)) / 1000.0,
                 generate_share=float(row.get("read_stage_responder_generate_share_pct", 0.0)),
-                visible_share=float(row.get("read_stage_first_visible_share_pct", 0.0)),
+                pending_dispatch_share=float(row.get("read_stage_pending_dispatch_share_pct", 0.0)),
+                first_tx_share=float(row.get("read_stage_first_packet_tx_share_pct", 0.0)),
+                network_visibility_share=float(row.get("read_stage_network_visibility_share_pct", 0.0)),
                 reassembly_share=float(row.get("read_stage_reassembly_share_pct", 0.0)),
                 terminal_share=float(row.get("read_stage_terminal_share_pct", 0.0)),
                 late=float(row.get("late_response_observed_total", 0.0)),
                 dominant=str(row["dominant_stage"]),
+            )
+        )
+    lines.extend(
+        [
+            "",
+            "## Pre-Visibility Admission",
+            "",
+            "| case | tracked_reads | retry_allocations | terminal_resource_exhaust | first_no_context_total | arrival_reserve_fail_total | target_to_first_no_context_p95_us | target_to_arrival_reserved_p95_us | arrival_reserved_to_first_visible_p95_us | target_hold_to_release_p95_us | arrival_hold_to_release_p95_us | dominant_pre_failure_stage |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        ]
+    )
+    for row in rows:
+        lines.append(
+            "| {case} | {tracked} | {retries} | {resource_exhaust} | {no_context_total} | {reserve_fail_total} | {target_to_no_context:.3f} | {target_to_reserved:.3f} | {reserved_to_visible:.3f} | {target_hold:.3f} | {arrival_hold:.3f} | {dominant} |".format(
+                case=str(row["case_name"]),
+                tracked=int(row.get("read_pre_admission_sample_count", 0)),
+                retries=int(row.get("read_pre_context_allocated_retry_count", 0)),
+                resource_exhaust=int(row.get("read_pre_terminal_resource_exhaust_count", 0)),
+                no_context_total=int(row.get("read_pre_first_packet_no_context_count_total", 0)),
+                reserve_fail_total=int(row.get("read_pre_arrival_reserve_fail_count_total", 0)),
+                target_to_no_context=float(
+                    row.get("read_pre_target_to_first_no_context_p95_ns", 0.0)
+                )
+                / 1000.0,
+                target_to_reserved=float(
+                    row.get("read_pre_target_to_arrival_reserved_p95_ns", 0.0)
+                )
+                / 1000.0,
+                reserved_to_visible=float(
+                    row.get("read_pre_arrival_reserved_to_first_response_visible_p95_ns", 0.0)
+                )
+                / 1000.0,
+                target_hold=float(row.get("read_pre_target_hold_to_release_p95_ns", 0.0))
+                / 1000.0,
+                arrival_hold=float(row.get("read_pre_arrival_hold_to_release_p95_ns", 0.0))
+                / 1000.0,
+                dominant=str(row.get("read_pre_failure_dominant_stage", "")) or "no-pre-failure",
+            )
+        )
+    lines.extend(
+        [
+            "",
+            "## Recovery Breakdown",
+            "",
+            "| case | recovery_samples | detect_to_nack_p95_us | nack_to_retransmit_p95_us | retransmit_to_visible_p95_us | visible_to_unblocked_p95_us | detect_to_unblocked_p95_us | recovery_dominant |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        ]
+    )
+    for row in rows:
+        lines.append(
+            "| {case} | {samples} | {detect_to_nack:.3f} | {nack_to_retx:.3f} | {retx_to_visible:.3f} | {visible_to_unblocked:.3f} | {detect_to_unblocked:.3f} | {dominant} |".format(
+                case=str(row["case_name"]),
+                samples=int(row.get("read_recovery_sample_count", 0)),
+                detect_to_nack=float(row.get("read_recovery_detect_to_nack_p95_ns", 0.0)) / 1000.0,
+                nack_to_retx=float(row.get("read_recovery_nack_to_retransmit_p95_ns", 0.0)) / 1000.0,
+                retx_to_visible=float(
+                    row.get("read_recovery_retransmit_to_first_visible_p95_ns", 0.0)
+                )
+                / 1000.0,
+                visible_to_unblocked=float(
+                    row.get("read_recovery_first_visible_to_unblocked_p95_ns", 0.0)
+                )
+                / 1000.0,
+                detect_to_unblocked=float(
+                    row.get("read_recovery_detect_to_unblocked_p95_ns", 0.0)
+                )
+                / 1000.0,
+                dominant=str(row["dominant_recovery_stage"]),
+            )
+        )
+    lines.extend(
+        [
+            "",
+            "## Failure-Path Recovery Progression",
+            "",
+            "| case | tracked_recovery | tracked_failures | gap_detect_only | nack_sent_only | nack_observed_only | retransmit_only | first_visible_only | reassembly_before_terminal | dominant_failure_stage |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        ]
+    )
+    for row in rows:
+        lines.append(
+            "| {case} | {tracked} | {failures} | {gap_only} | {nack_only} | {observed_only} | {retransmit_only} | {first_visible_only} | {reassembly_before_terminal} | {dominant} |".format(
+                case=str(row["case_name"]),
+                tracked=int(row.get("read_recovery_tracked_count", 0)),
+                failures=int(row.get("read_recovery_failure_tracked_count", 0)),
+                gap_only=int(row.get("read_recovery_failure_gap_detect_only_count", 0)),
+                nack_only=int(row.get("read_recovery_failure_nack_sent_only_count", 0)),
+                observed_only=int(row.get("read_recovery_failure_nack_observed_only_count", 0)),
+                retransmit_only=int(row.get("read_recovery_failure_retransmit_only_count", 0)),
+                first_visible_only=int(
+                    row.get("read_recovery_failure_first_visible_only_count", 0)
+                ),
+                reassembly_before_terminal=int(
+                    row.get("read_recovery_failure_reassembly_before_terminal_count", 0)
+                ),
+                dominant=str(row.get("dominant_failure_stage", "")),
+            )
+        )
+    lines.extend(
+        [
+            "",
+            "## Failure-Path Recovery Timing",
+            "",
+            "| case | detect_to_nack_p95_us | nack_to_sender_observed_p95_us | sender_observed_to_retransmit_p95_us | retransmit_to_terminal_p95_us | detect_to_terminal_p95_us |",
+            "| --- | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for row in rows:
+        lines.append(
+            "| {case} | {detect_to_nack:.3f} | {nack_to_observed:.3f} | {observed_to_retx:.3f} | {retx_to_terminal:.3f} | {detect_to_terminal:.3f} |".format(
+                case=str(row["case_name"]),
+                detect_to_nack=float(
+                    row.get("read_recovery_failure_detect_to_nack_p95_ns", 0.0)
+                )
+                / 1000.0,
+                nack_to_observed=float(
+                    row.get("read_recovery_failure_nack_to_observed_at_sender_p95_ns", 0.0)
+                )
+                / 1000.0,
+                observed_to_retx=float(
+                    row.get(
+                        "read_recovery_failure_observed_at_sender_to_retransmit_p95_ns", 0.0
+                    )
+                )
+                / 1000.0,
+                retx_to_terminal=float(
+                    row.get("read_recovery_failure_retransmit_to_terminal_p95_ns", 0.0)
+                )
+                / 1000.0,
+                detect_to_terminal=float(
+                    row.get("read_recovery_failure_detect_to_terminal_p95_ns", 0.0)
+                )
+                / 1000.0,
             )
         )
     lines.extend(["", "## Conclusion", ""])
@@ -164,13 +347,53 @@ def render_report(report_path: Path, metadata: dict[str, Any], rows: list[dict[s
                 f"- Pressure shifts the dominant stage from `{low['dominant_stage']}` to `{high['dominant_stage']}`."
             )
         lines.append(
-            "- Late-response should now be read as a concrete stage issue: compare responder generation p95 `{low_gen:.3f} -> {high_gen:.3f} us`, first-visible p95 `{low_vis:.3f} -> {high_vis:.3f} us`, and reassembly p95 `{low_reasm:.3f} -> {high_reasm:.3f} us`.".format(
+            "- Late-response should now be read as a concrete stage issue: compare responder generation p95 `{low_gen:.3f} -> {high_gen:.3f} us`, pending-dispatch p95 `{low_pending:.3f} -> {high_pending:.3f} us`, first-packet-tx p95 `{low_tx:.3f} -> {high_tx:.3f} us`, network-visibility p95 `{low_net:.3f} -> {high_net:.3f} us`, and reassembly p95 `{low_reasm:.3f} -> {high_reasm:.3f} us`.".format(
                 low_gen=float(low.get("read_stage_responder_budget_generate_p95_ns", 0.0)) / 1000.0,
                 high_gen=float(high.get("read_stage_responder_budget_generate_p95_ns", 0.0)) / 1000.0,
-                low_vis=float(low.get("read_stage_first_response_visible_p95_ns", 0.0)) / 1000.0,
-                high_vis=float(high.get("read_stage_first_response_visible_p95_ns", 0.0)) / 1000.0,
+                low_pending=float(low.get("read_stage_pending_response_queue_dispatch_p95_ns", 0.0)) / 1000.0,
+                high_pending=float(high.get("read_stage_pending_response_queue_dispatch_p95_ns", 0.0)) / 1000.0,
+                low_tx=float(low.get("read_stage_response_first_packet_tx_p95_ns", 0.0)) / 1000.0,
+                high_tx=float(high.get("read_stage_response_first_packet_tx_p95_ns", 0.0)) / 1000.0,
+                low_net=float(low.get("read_stage_network_return_visibility_p95_ns", 0.0)) / 1000.0,
+                high_net=float(high.get("read_stage_network_return_visibility_p95_ns", 0.0)) / 1000.0,
                 low_reasm=float(low.get("read_stage_reassembly_complete_p95_ns", 0.0)) / 1000.0,
                 high_reasm=float(high.get("read_stage_reassembly_complete_p95_ns", 0.0)) / 1000.0,
+            )
+        )
+        lines.append(
+            "- Pre-visibility admission now shows whether failures die before any response data becomes visible. Compare dominant pre-failure stage `{low_stage}` -> `{high_stage}`, resource-exhaust terminals `{low_exhaust} -> {high_exhaust}`, and arrival-reserve-fail totals `{low_fail} -> {high_fail}`.".format(
+                low_stage=str(low.get("read_pre_failure_dominant_stage", "")) or "no-pre-failure",
+                high_stage=str(high.get("read_pre_failure_dominant_stage", "")) or "no-pre-failure",
+                low_exhaust=int(low.get("read_pre_terminal_resource_exhaust_count", 0)),
+                high_exhaust=int(high.get("read_pre_terminal_resource_exhaust_count", 0)),
+                low_fail=int(low.get("read_pre_arrival_reserve_fail_count_total", 0)),
+                high_fail=int(high.get("read_pre_arrival_reserve_fail_count_total", 0)),
+            )
+        )
+        lines.append(
+            "- Recovery sub-stages now separate hole detection from sender recovery. Compare detect-to-nack p95 `{low_detect:.3f} -> {high_detect:.3f} us`, nack-to-retransmit p95 `{low_retx:.3f} -> {high_retx:.3f} us`, and retransmit-to-visible p95 `{low_visible:.3f} -> {high_visible:.3f} us`.".format(
+                low_detect=float(low.get("read_recovery_detect_to_nack_p95_ns", 0.0)) / 1000.0,
+                high_detect=float(high.get("read_recovery_detect_to_nack_p95_ns", 0.0)) / 1000.0,
+                low_retx=float(low.get("read_recovery_nack_to_retransmit_p95_ns", 0.0)) / 1000.0,
+                high_retx=float(high.get("read_recovery_nack_to_retransmit_p95_ns", 0.0)) / 1000.0,
+                low_visible=float(
+                    low.get("read_recovery_retransmit_to_first_visible_p95_ns", 0.0)
+                )
+                / 1000.0,
+                high_visible=float(
+                    high.get("read_recovery_retransmit_to_first_visible_p95_ns", 0.0)
+                )
+                / 1000.0,
+            )
+        )
+        lines.append(
+            "- Failure-path progression now shows where tracked READ holes die before completion. Compare dominant failure stage `{low_stage}` -> `{high_stage}`, plus retransmit-only failures `{low_retx_only} -> {high_retx_only}` and first-visible-before-terminal failures `{low_visible_only} -> {high_visible_only}`.".format(
+                low_stage=str(low.get("dominant_failure_stage", "")),
+                high_stage=str(high.get("dominant_failure_stage", "")),
+                low_retx_only=int(low.get("read_recovery_failure_retransmit_only_count", 0)),
+                high_retx_only=int(high.get("read_recovery_failure_retransmit_only_count", 0)),
+                low_visible_only=int(low.get("read_recovery_failure_first_visible_only_count", 0)),
+                high_visible_only=int(high.get("read_recovery_failure_first_visible_only_count", 0)),
             )
         )
     report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -206,6 +429,8 @@ def main() -> None:
         enriched["case_name"] = str(row["tuning_name"])
         add_stage_shares(enriched)
         enriched["dominant_stage"] = classify_dominant_stage(enriched)
+        enriched["dominant_recovery_stage"] = classify_dominant_recovery_stage(enriched)
+        enriched["dominant_failure_stage"] = classify_dominant_failure_stage(enriched)
         rows.append(enriched)
     rows.sort(key=lambda item: str(item["case_name"]))
 

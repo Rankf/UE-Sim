@@ -115,6 +115,8 @@ struct BufferedPacket
     Ptr<Packet> packet;                        ///< Packet data
     Time timestamp;                            ///< Time when packet was sent/buffered
     Time lastRetransmission;                   ///< Time of last retransmission
+    Time recoveryGapNackSentTime;              ///< Last gap-NACK time that triggered a retransmit
+    Time recoveryRetransmitTxTime;             ///< Retransmit tx time exported with the packet
     uint8_t retransmissionCount;               ///< Number of retransmissions
     bool acknowledged;                         ///< Packet acknowledged status
     bool som;                                  ///< Start of message flag
@@ -125,12 +127,14 @@ struct BufferedPacket
 
     BufferedPacket ()
         : packet (nullptr), timestamp (Seconds (0)), lastRetransmission (Seconds (0)),
+          recoveryGapNackSentTime (Time::Max ()), recoveryRetransmitTxTime (Time::Max ()),
           retransmissionCount (0), acknowledged (false), som (false), eom (false),
           sequenceNumber (0), rtoTimer (nullptr)
     {}
 
     BufferedPacket (Ptr<Packet> pkt, bool s, bool e, uint32_t seq)
         : packet (pkt), timestamp (Simulator::Now ()), lastRetransmission (Seconds (0)),
+          recoveryGapNackSentTime (Time::Max ()), recoveryRetransmitTxTime (Time::Max ()),
           retransmissionCount (0), acknowledged (false), som (s), eom (e),
           sequenceNumber (seq), rtoTimer (nullptr)
     {}
@@ -155,6 +159,16 @@ struct Acknowledgment
     Acknowledgment (uint32_t ack, uint16_t window, bool cum = false)
         : ackSequence (ack), receiveWindow (window), cumulative (cum), timestamp (Simulator::Now ())
     {}
+};
+
+struct ReadGapDiagnosticContext
+{
+    uint64_t jobId{0};
+    uint16_t msgId{0};
+    uint32_t peerFep{0};
+    uint32_t missingSeq{0};
+    uint32_t observedSeq{0};
+    uint64_t gapDetectedAtNs{0};
 };
 
 /**
@@ -262,7 +276,8 @@ public:
      * @param ack Received acknowledgment
      * @return true if acknowledgment was processed successfully
      */
-    bool ProcessReceivedAcknowledgment (const Acknowledgment& ack);
+    bool ProcessReceivedAcknowledgment (const Acknowledgment& ack,
+                                        Time gapNackSentTime = Time::Max ());
 
     /**
      * @brief Force retransmission of unacknowledged packets
@@ -366,6 +381,8 @@ private:
     uint32_t m_lastAckSequence;                ///< Last cumulative ACK sequence observed
     uint32_t m_sendBufferSizeMax;              ///< Max send-buffer occupancy observed
     uint32_t m_ackAdvanceEventsTotal;          ///< Times ACK advanced send window base
+    std::unordered_map<uint32_t, uint64_t> m_gapNackObservedNsBySeq; ///< First gap-NACK time by missing seq
+    std::unordered_map<uint32_t, ReadGapDiagnosticContext> m_readGapContextByMissingSeq;
 
     // Internal helper methods
     bool BufferPacketForSending (Ptr<Packet> packet, bool som, bool eom);
@@ -374,7 +391,7 @@ private:
     void ProcessReceiveQueue (void);
     void RetransmitPacket (uint32_t sequenceNumber);
     bool TransmitPacket (const BufferedPacket& bp);
-    void ScheduleAcknowledgment (void);
+    void ScheduleAcknowledgment (bool immediate = false);
     void SendPendingAcknowledgments (void);
     void UpdateSendWindow (void);
     void UpdateReceiveWindow (void);
@@ -385,6 +402,7 @@ private:
     bool IsInReceiveWindow (uint32_t sequence) const;
     void CleanupAcknowledgedPackets (void);
     Acknowledgment CreateAcknowledgment (void);
+    void PruneResolvedReadGapContexts (void);
     uint32_t GenerateSequenceNumber (void);
     void UpdateStatistics (void);
     bool SendControlPacket (uint8_t flags,

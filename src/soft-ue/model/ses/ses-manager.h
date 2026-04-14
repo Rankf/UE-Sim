@@ -298,6 +298,63 @@ public:
     void NotifyEagerSize (uint32_t eagerSize);
     void NotifyPause (bool paused);
     void NotifyPeerCreditsAvailable (uint32_t peerFep);
+    void NotifyExternalDiagnosticEvent (const std::string& name, const std::string& detail);
+    void NotifyReadResponseGapDetected (uint64_t jobId,
+                                        uint16_t msgId,
+                                        uint32_t peerFep,
+                                        uint32_t missingChunkIndex,
+                                        uint64_t detectedAtNs);
+    void NotifyReadResponseTargetRegistered (uint64_t jobId,
+                                             uint16_t msgId,
+                                             uint32_t peerFep,
+                                             uint64_t registeredAtNs);
+    void NotifyReadResponseFirstPacketNoContext (uint64_t jobId,
+                                                 uint16_t msgId,
+                                                 uint32_t peerFep,
+                                                 uint64_t observedAtNs);
+    void NotifyReadResponseArrivalBlockReserved (uint64_t jobId,
+                                                 uint16_t msgId,
+                                                 uint32_t peerFep,
+                                                 uint64_t reservedAtNs);
+    void NotifyReadResponseArrivalBlockReserveFailed (uint64_t jobId,
+                                                      uint16_t msgId,
+                                                      uint32_t peerFep,
+                                                      uint64_t failedAtNs);
+    void NotifyReadResponseArrivalContextReleased (uint64_t jobId,
+                                                   uint16_t msgId,
+                                                   uint32_t peerFep,
+                                                   uint64_t releasedAtNs);
+    void NotifyReadResponseTargetReleased (uint64_t jobId,
+                                           uint16_t msgId,
+                                           uint32_t peerFep,
+                                           uint64_t releasedAtNs);
+    void NotifyReadResponseGapNackSent (uint64_t jobId,
+                                        uint16_t msgId,
+                                        uint32_t peerFep,
+                                        uint32_t missingTransportSeq,
+                                        uint64_t sentAtNs);
+    void NotifyReadResponseGapNackObservedAtSender (uint64_t jobId,
+                                                    uint16_t msgId,
+                                                    uint32_t peerFep,
+                                                    uint32_t missingTransportSeq,
+                                                    uint64_t observedAtNs);
+    void NotifyReadResponseGapRetransmitTx (uint64_t jobId,
+                                            uint16_t msgId,
+                                            uint32_t peerFep,
+                                            uint32_t missingTransportSeq,
+                                            uint64_t retransmitTxAtNs);
+    void NotifyReadResponseRecoveryVisible (uint64_t jobId,
+                                            uint16_t msgId,
+                                            uint32_t peerFep,
+                                            uint32_t chunkIndex,
+                                            uint64_t gapNackSentAtNs,
+                                            uint64_t retransmitTxAtNs,
+                                            uint64_t visibleAtNs);
+    void NotifyReadResponseReassemblyUnblocked (uint64_t jobId,
+                                                uint16_t msgId,
+                                                uint32_t peerFep,
+                                                uint32_t chunkIndex,
+                                                uint64_t unblockedAtNs);
 
     // Traced callbacks for monitoring
     TracedCallback<Ptr<ExtendedOperationMetadata>> m_txTrace;        ///< Packet transmit trace
@@ -411,8 +468,30 @@ private:
         uint64_t receiveConsumeCompleteNs{0};
         uint64_t responseVisibleNs{0};
         uint64_t readResponseGeneratedNs{0};
+        uint64_t readResponseFirstDispatchAttemptNs{0};
+        uint64_t readResponseFirstFragmentSentNs{0};
         uint64_t readResponseFirstVisibleNs{0};
         uint64_t readResponseReassemblyCompleteNs{0};
+        uint64_t readResponseTargetRegisteredNs{0};
+        uint64_t readResponseFirstPacketNoContextNs{0};
+        uint64_t readResponseArrivalBlockReservedNs{0};
+        uint64_t readResponseContextAllocatedRetryNs{0};
+        uint64_t readResponseArrivalContextReleasedNs{0};
+        uint64_t readResponseTargetReleasedNs{0};
+        uint32_t readResponseFirstPacketNoContextCount{0};
+        uint32_t readResponseArrivalReserveFailCount{0};
+        bool readRecoveryTracked{false};
+        uint32_t readRecoveryMissingChunkIndex{0};
+        uint32_t readRecoveryMissingTransportSeq{0};
+        uint64_t readRecoveryGapDetectedAtNs{0};
+        uint64_t readRecoveryGapNackSentAtNs{0};
+        uint64_t readRecoveryGapNackObservedAtSenderNs{0};
+        uint64_t readRecoveryMissingFragmentRetransmitTxAtNs{0};
+        uint64_t readRecoveryMissingFragmentFirstVisibleAtNs{0};
+        uint64_t readRecoveryReassemblyUnblockedAtNs{0};
+        uint32_t readRecoveryGapNackSentCount{0};
+        uint32_t readRecoveryGapNackObservedAtSenderCount{0};
+        uint32_t readRecoveryMissingFragmentRetransmitCount{0};
         uint8_t finalReturnCode{static_cast<uint8_t> (ResponseReturnCode::RC_OK)};
         uint32_t completedPayloadBytes{0};
         bool countedInSemanticStats{false};
@@ -451,6 +530,8 @@ private:
         uint32_t readResponderBudgetBytes{0};
         uint64_t responderReceiveConsumeCompleteNs{0};
         uint64_t responseGeneratedNs{0};
+        uint64_t responseFirstDispatchAttemptNs{0};
+        uint64_t responseFirstFragmentSentNs{0};
         uint32_t packetCount{0};
         uint16_t retryCount{0};
         int64_t nextRetryMs{0};

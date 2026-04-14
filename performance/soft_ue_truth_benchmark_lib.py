@@ -321,6 +321,15 @@ RUN_SUMMARY_FIELDS = [
     "read_stage_responder_budget_generate_p50_ns",
     "read_stage_responder_budget_generate_p95_ns",
     "read_stage_responder_budget_generate_p99_ns",
+    "read_stage_pending_response_queue_dispatch_p50_ns",
+    "read_stage_pending_response_queue_dispatch_p95_ns",
+    "read_stage_pending_response_queue_dispatch_p99_ns",
+    "read_stage_response_first_packet_tx_p50_ns",
+    "read_stage_response_first_packet_tx_p95_ns",
+    "read_stage_response_first_packet_tx_p99_ns",
+    "read_stage_network_return_visibility_p50_ns",
+    "read_stage_network_return_visibility_p95_ns",
+    "read_stage_network_return_visibility_p99_ns",
     "read_stage_first_response_visible_p50_ns",
     "read_stage_first_response_visible_p95_ns",
     "read_stage_first_response_visible_p99_ns",
@@ -334,10 +343,79 @@ RUN_SUMMARY_FIELDS = [
     "read_stage_end_to_end_p95_ns",
     "read_stage_end_to_end_p99_ns",
     "read_stage_responder_budget_generate_mean_ns",
+    "read_stage_pending_response_queue_dispatch_mean_ns",
+    "read_stage_response_first_packet_tx_mean_ns",
+    "read_stage_network_return_visibility_mean_ns",
     "read_stage_first_response_visible_mean_ns",
     "read_stage_reassembly_complete_mean_ns",
     "read_stage_terminal_mean_ns",
     "read_stage_end_to_end_mean_ns",
+    "read_pre_admission_sample_count",
+    "read_pre_context_allocated_retry_count",
+    "read_pre_terminal_resource_exhaust_count",
+    "read_pre_first_packet_no_context_count_total",
+    "read_pre_arrival_reserve_fail_count_total",
+    "read_pre_target_to_first_no_context_p50_ns",
+    "read_pre_target_to_first_no_context_p95_ns",
+    "read_pre_target_to_arrival_reserved_p50_ns",
+    "read_pre_target_to_arrival_reserved_p95_ns",
+    "read_pre_first_no_context_to_arrival_reserved_p50_ns",
+    "read_pre_first_no_context_to_arrival_reserved_p95_ns",
+    "read_pre_arrival_reserved_to_first_response_visible_p50_ns",
+    "read_pre_arrival_reserved_to_first_response_visible_p95_ns",
+    "read_pre_target_hold_to_release_p50_ns",
+    "read_pre_target_hold_to_release_p95_ns",
+    "read_pre_arrival_hold_to_release_p50_ns",
+    "read_pre_arrival_hold_to_release_p95_ns",
+    "read_pre_target_to_terminal_resource_exhaust_p50_ns",
+    "read_pre_target_to_terminal_resource_exhaust_p95_ns",
+    "read_pre_first_no_context_to_terminal_resource_exhaust_p50_ns",
+    "read_pre_first_no_context_to_terminal_resource_exhaust_p95_ns",
+    "read_pre_failure_target_registered_only_count",
+    "read_pre_failure_first_packet_no_context_only_count",
+    "read_pre_failure_arrival_reserved_before_visible_count",
+    "read_pre_failure_context_allocated_retry_count",
+    "read_pre_failure_dominant_stage",
+    "read_recovery_sample_count",
+    "read_recovery_detect_to_nack_p50_ns",
+    "read_recovery_detect_to_nack_p95_ns",
+    "read_recovery_detect_to_nack_p99_ns",
+    "read_recovery_nack_to_retransmit_p50_ns",
+    "read_recovery_nack_to_retransmit_p95_ns",
+    "read_recovery_nack_to_retransmit_p99_ns",
+    "read_recovery_retransmit_to_first_visible_p50_ns",
+    "read_recovery_retransmit_to_first_visible_p95_ns",
+    "read_recovery_retransmit_to_first_visible_p99_ns",
+    "read_recovery_first_visible_to_unblocked_p50_ns",
+    "read_recovery_first_visible_to_unblocked_p95_ns",
+    "read_recovery_first_visible_to_unblocked_p99_ns",
+    "read_recovery_detect_to_unblocked_p50_ns",
+    "read_recovery_detect_to_unblocked_p95_ns",
+    "read_recovery_detect_to_unblocked_p99_ns",
+    "read_recovery_detect_to_nack_mean_ns",
+    "read_recovery_nack_to_retransmit_mean_ns",
+    "read_recovery_retransmit_to_first_visible_mean_ns",
+    "read_recovery_first_visible_to_unblocked_mean_ns",
+    "read_recovery_detect_to_unblocked_mean_ns",
+    "read_recovery_tracked_count",
+    "read_recovery_failure_tracked_count",
+    "read_recovery_failure_gap_detect_only_count",
+    "read_recovery_failure_nack_sent_only_count",
+    "read_recovery_failure_nack_observed_only_count",
+    "read_recovery_failure_retransmit_only_count",
+    "read_recovery_failure_first_visible_only_count",
+    "read_recovery_failure_reassembly_before_terminal_count",
+    "read_recovery_failure_detect_to_nack_p50_ns",
+    "read_recovery_failure_detect_to_nack_p95_ns",
+    "read_recovery_failure_nack_to_observed_at_sender_p50_ns",
+    "read_recovery_failure_nack_to_observed_at_sender_p95_ns",
+    "read_recovery_failure_observed_at_sender_to_retransmit_p50_ns",
+    "read_recovery_failure_observed_at_sender_to_retransmit_p95_ns",
+    "read_recovery_failure_retransmit_to_terminal_p50_ns",
+    "read_recovery_failure_retransmit_to_terminal_p95_ns",
+    "read_recovery_failure_detect_to_terminal_p50_ns",
+    "read_recovery_failure_detect_to_terminal_p95_ns",
+    "read_recovery_failure_dominant_stage",
     "device_tx_egress_mbps",
     "device_rx_observed_mbps",
     "send_success_completions_total",
@@ -442,6 +520,7 @@ RUN_SUMMARY_FIELDS = [
     "completion_artifact",
     "send_stage_latency_artifact",
     "read_stage_latency_artifact",
+    "read_recovery_latency_artifact",
     "failure_artifact",
     "diagnostic_artifact",
     "peer_pair_progress_artifact",
@@ -499,6 +578,15 @@ COMPARISON_METRICS = [
     "read_stage_responder_budget_generate_p50_ns",
     "read_stage_responder_budget_generate_p95_ns",
     "read_stage_responder_budget_generate_p99_ns",
+    "read_stage_pending_response_queue_dispatch_p50_ns",
+    "read_stage_pending_response_queue_dispatch_p95_ns",
+    "read_stage_pending_response_queue_dispatch_p99_ns",
+    "read_stage_response_first_packet_tx_p50_ns",
+    "read_stage_response_first_packet_tx_p95_ns",
+    "read_stage_response_first_packet_tx_p99_ns",
+    "read_stage_network_return_visibility_p50_ns",
+    "read_stage_network_return_visibility_p95_ns",
+    "read_stage_network_return_visibility_p99_ns",
     "read_stage_first_response_visible_p50_ns",
     "read_stage_first_response_visible_p95_ns",
     "read_stage_first_response_visible_p99_ns",
@@ -1133,10 +1221,168 @@ def build_read_stage_latency(rows: list[dict[str, str]]) -> list[dict[str, Any]]
                 "peer_fep": to_int(row.get("PeerFep")),
                 "payload_bytes": to_int(row.get("PayloadBytes")),
                 "responder_budget_generate_ns": to_int(row.get("ReadStageResponderBudgetGenerateNs")),
+                "pending_response_queue_dispatch_ns": to_int(
+                    row.get("ReadStagePendingResponseQueueDispatchNs")
+                ),
+                "response_first_packet_tx_ns": to_int(row.get("ReadStageResponseFirstPacketTxNs")),
+                "network_return_visibility_ns": to_int(
+                    row.get("ReadStageNetworkReturnVisibilityNs")
+                ),
                 "first_response_visible_ns": to_int(row.get("ReadStageFirstResponseVisibleNs")),
                 "reassembly_complete_ns": to_int(row.get("ReadStageReassemblyCompleteNs")),
                 "terminal_ns": to_int(row.get("ReadStageTerminalNs")),
                 "end_to_end_ns": to_int(row.get("ReadStageEndToEndNs")),
+            }
+        )
+    return result
+
+
+def build_read_recovery_latency(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        if canonicalize_opcode(row.get("Opcode")) != "read":
+            continue
+        if to_int(row.get("Success")) == 0 or to_int(row.get("ReadRecoveryValid")) == 0:
+            continue
+        result.append(
+            {
+                "job_id": to_int(row.get("JobId")),
+                "msg_id": to_int(row.get("MsgId")),
+                "peer_fep": to_int(row.get("PeerFep")),
+                "payload_bytes": to_int(row.get("PayloadBytes")),
+                "missing_chunk_index": to_int(row.get("ReadRecoveryMissingChunkIndex")),
+                "gap_detected_at_ns": to_int(row.get("ReadRecoveryGapDetectedAtNs")),
+                "gap_nack_sent_at_ns": to_int(row.get("ReadRecoveryGapNackSentAtNs")),
+                "missing_fragment_retransmit_tx_at_ns": to_int(
+                    row.get("ReadRecoveryMissingFragmentRetransmitTxAtNs")
+                ),
+                "missing_fragment_first_visible_at_ns": to_int(
+                    row.get("ReadRecoveryMissingFragmentFirstVisibleAtNs")
+                ),
+                "reassembly_unblocked_at_ns": to_int(row.get("ReadRecoveryReassemblyUnblockedAtNs")),
+                "detect_to_nack_ns": to_int(row.get("ReadRecoveryDetectToNackNs")),
+                "nack_to_retransmit_ns": to_int(row.get("ReadRecoveryNackToRetransmitNs")),
+                "retransmit_to_first_visible_ns": to_int(
+                    row.get("ReadRecoveryRetransmitToFirstVisibleNs")
+                ),
+                "first_visible_to_unblocked_ns": to_int(
+                    row.get("ReadRecoveryFirstVisibleToUnblockedNs")
+                ),
+                "detect_to_unblocked_ns": to_int(row.get("ReadRecoveryDetectToUnblockedNs")),
+            }
+        )
+    return result
+
+
+def build_read_recovery_progress(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        if canonicalize_opcode(row.get("Opcode")) != "read":
+            continue
+        if to_int(row.get("ReadRecoveryTracked")) == 0:
+            continue
+        result.append(
+            {
+                "job_id": to_int(row.get("JobId")),
+                "msg_id": to_int(row.get("MsgId")),
+                "peer_fep": to_int(row.get("PeerFep")),
+                "success": to_int(row.get("Success")) != 0,
+                "failure_domain": str(row.get("FailureDomain") or ""),
+                "terminal_reason": str(row.get("TerminalReason") or ""),
+                "missing_chunk_index": to_int(row.get("ReadRecoveryMissingChunkIndex")),
+                "missing_transport_seq": to_int(row.get("ReadRecoveryMissingTransportSeq")),
+                "gap_detected_at_ns": to_int(row.get("ReadRecoveryGapDetectedAtNs")),
+                "gap_nack_sent_at_ns": to_int(row.get("ReadRecoveryGapNackSentAtNs")),
+                "gap_nack_observed_at_sender_ns": to_int(
+                    row.get("ReadRecoveryGapNackObservedAtSenderNs")
+                ),
+                "missing_fragment_retransmit_tx_at_ns": to_int(
+                    row.get("ReadRecoveryMissingFragmentRetransmitTxAtNs")
+                ),
+                "missing_fragment_first_visible_at_ns": to_int(
+                    row.get("ReadRecoveryMissingFragmentFirstVisibleAtNs")
+                ),
+                "reassembly_unblocked_at_ns": to_int(
+                    row.get("ReadRecoveryReassemblyUnblockedAtNs")
+                ),
+                "gap_nack_sent_count": to_int(row.get("ReadRecoveryGapNackSentCount")),
+                "gap_nack_observed_at_sender_count": to_int(
+                    row.get("ReadRecoveryGapNackObservedAtSenderCount")
+                ),
+                "missing_fragment_retransmit_count": to_int(
+                    row.get("ReadRecoveryMissingFragmentRetransmitCount")
+                ),
+                "detect_to_nack_ns": to_int(row.get("ReadRecoveryDetectToNackNs")),
+                "nack_to_observed_at_sender_ns": to_int(
+                    row.get("ReadRecoveryNackToObservedAtSenderNs")
+                ),
+                "observed_at_sender_to_retransmit_ns": to_int(
+                    row.get("ReadRecoveryObservedAtSenderToRetransmitNs")
+                ),
+                "nack_to_retransmit_ns": to_int(row.get("ReadRecoveryNackToRetransmitNs")),
+                "retransmit_to_first_visible_ns": to_int(
+                    row.get("ReadRecoveryRetransmitToFirstVisibleNs")
+                ),
+                "first_visible_to_unblocked_ns": to_int(
+                    row.get("ReadRecoveryFirstVisibleToUnblockedNs")
+                ),
+                "detect_to_unblocked_ns": to_int(row.get("ReadRecoveryDetectToUnblockedNs")),
+                "retransmit_to_terminal_ns": to_int(
+                    row.get("ReadRecoveryRetransmitToTerminalNs")
+                ),
+                "detect_to_terminal_ns": to_int(row.get("ReadRecoveryDetectToTerminalNs")),
+            }
+        )
+    return result
+
+
+def build_read_pre_admission_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        if canonicalize_opcode(row.get("Opcode")) != "read":
+            continue
+        if to_int(row.get("ReadPreAdmissionTracked")) == 0:
+            continue
+        result.append(
+            {
+                "job_id": to_int(row.get("JobId")),
+                "msg_id": to_int(row.get("MsgId")),
+                "peer_fep": to_int(row.get("PeerFep")),
+                "success": to_int(row.get("Success")) != 0,
+                "failure_domain": str(row.get("FailureDomain") or ""),
+                "terminal_reason": str(row.get("TerminalReason") or ""),
+                "context_allocated_retry": to_int(row.get("ReadPreContextAllocatedRetry")) != 0,
+                "terminal_resource_exhaust": to_int(row.get("ReadPreTerminalResourceExhaust")) != 0,
+                "first_packet_no_context_count": to_int(row.get("ReadPreFirstPacketNoContextCount")),
+                "arrival_reserve_fail_count": to_int(row.get("ReadPreArrivalReserveFailCount")),
+                "target_registered_at_ns": to_int(row.get("ReadPreTargetRegisteredAtNs")),
+                "first_packet_no_context_at_ns": to_int(row.get("ReadPreFirstPacketNoContextAtNs")),
+                "arrival_block_reserved_at_ns": to_int(row.get("ReadPreArrivalBlockReservedAtNs")),
+                "context_allocated_retry_at_ns": to_int(row.get("ReadPreContextAllocatedRetryAtNs")),
+                "target_released_at_ns": to_int(row.get("ReadPreTargetReleasedAtNs")),
+                "arrival_context_released_at_ns": to_int(
+                    row.get("ReadPreArrivalContextReleasedAtNs")
+                ),
+                "target_to_first_no_context_ns": to_int(
+                    row.get("ReadPreTargetToFirstNoContextNs")
+                ),
+                "target_to_arrival_reserved_ns": to_int(
+                    row.get("ReadPreTargetToArrivalReservedNs")
+                ),
+                "first_no_context_to_arrival_reserved_ns": to_int(
+                    row.get("ReadPreFirstNoContextToArrivalReservedNs")
+                ),
+                "arrival_reserved_to_first_response_visible_ns": to_int(
+                    row.get("ReadPreArrivalReservedToFirstResponseVisibleNs")
+                ),
+                "target_hold_to_release_ns": to_int(row.get("ReadPreTargetHoldToReleaseNs")),
+                "arrival_hold_to_release_ns": to_int(row.get("ReadPreArrivalHoldToReleaseNs")),
+                "target_to_terminal_resource_exhaust_ns": to_int(
+                    row.get("ReadPreTargetToTerminalResourceExhaustNs")
+                ),
+                "first_no_context_to_terminal_resource_exhaust_ns": to_int(
+                    row.get("ReadPreFirstNoContextToTerminalResourceExhaustNs")
+                ),
             }
         )
     return result
@@ -1265,6 +1511,9 @@ def aggregate_send_stage_rows(rows: list[dict[str, str]]) -> dict[str, Any]:
 def aggregate_read_stage_rows(rows: list[dict[str, str]]) -> dict[str, Any]:
     stage_rows = build_read_stage_latency(rows)
     responder_generate_values = [float(item["responder_budget_generate_ns"]) for item in stage_rows]
+    pending_dispatch_values = [float(item["pending_response_queue_dispatch_ns"]) for item in stage_rows]
+    first_packet_tx_values = [float(item["response_first_packet_tx_ns"]) for item in stage_rows]
+    network_visibility_values = [float(item["network_return_visibility_ns"]) for item in stage_rows]
     first_visible_values = [float(item["first_response_visible_ns"]) for item in stage_rows]
     reassembly_values = [float(item["reassembly_complete_ns"]) for item in stage_rows]
     terminal_values = [float(item["terminal_ns"]) for item in stage_rows]
@@ -1274,6 +1523,15 @@ def aggregate_read_stage_rows(rows: list[dict[str, str]]) -> dict[str, Any]:
         "read_stage_responder_budget_generate_p50_ns": percentile_or_zero(responder_generate_values, 0.50),
         "read_stage_responder_budget_generate_p95_ns": percentile_or_zero(responder_generate_values, 0.95),
         "read_stage_responder_budget_generate_p99_ns": percentile_or_zero(responder_generate_values, 0.99),
+        "read_stage_pending_response_queue_dispatch_p50_ns": percentile_or_zero(pending_dispatch_values, 0.50),
+        "read_stage_pending_response_queue_dispatch_p95_ns": percentile_or_zero(pending_dispatch_values, 0.95),
+        "read_stage_pending_response_queue_dispatch_p99_ns": percentile_or_zero(pending_dispatch_values, 0.99),
+        "read_stage_response_first_packet_tx_p50_ns": percentile_or_zero(first_packet_tx_values, 0.50),
+        "read_stage_response_first_packet_tx_p95_ns": percentile_or_zero(first_packet_tx_values, 0.95),
+        "read_stage_response_first_packet_tx_p99_ns": percentile_or_zero(first_packet_tx_values, 0.99),
+        "read_stage_network_return_visibility_p50_ns": percentile_or_zero(network_visibility_values, 0.50),
+        "read_stage_network_return_visibility_p95_ns": percentile_or_zero(network_visibility_values, 0.95),
+        "read_stage_network_return_visibility_p99_ns": percentile_or_zero(network_visibility_values, 0.99),
         "read_stage_first_response_visible_p50_ns": percentile_or_zero(first_visible_values, 0.50),
         "read_stage_first_response_visible_p95_ns": percentile_or_zero(first_visible_values, 0.95),
         "read_stage_first_response_visible_p99_ns": percentile_or_zero(first_visible_values, 0.99),
@@ -1289,6 +1547,15 @@ def aggregate_read_stage_rows(rows: list[dict[str, str]]) -> dict[str, Any]:
         "read_stage_responder_budget_generate_mean_ns": round(statistics.fmean(responder_generate_values), 6)
         if responder_generate_values
         else 0.0,
+        "read_stage_pending_response_queue_dispatch_mean_ns": round(statistics.fmean(pending_dispatch_values), 6)
+        if pending_dispatch_values
+        else 0.0,
+        "read_stage_response_first_packet_tx_mean_ns": round(statistics.fmean(first_packet_tx_values), 6)
+        if first_packet_tx_values
+        else 0.0,
+        "read_stage_network_return_visibility_mean_ns": round(statistics.fmean(network_visibility_values), 6)
+        if network_visibility_values
+        else 0.0,
         "read_stage_first_response_visible_mean_ns": round(statistics.fmean(first_visible_values), 6)
         if first_visible_values
         else 0.0,
@@ -1301,6 +1568,348 @@ def aggregate_read_stage_rows(rows: list[dict[str, str]]) -> dict[str, Any]:
         "read_stage_end_to_end_mean_ns": round(statistics.fmean(end_to_end_values), 6)
         if end_to_end_values
         else 0.0,
+    }
+
+
+def aggregate_read_recovery_rows(rows: list[dict[str, str]]) -> dict[str, Any]:
+    recovery_rows = build_read_recovery_latency(rows)
+    detect_to_nack_values = [float(item["detect_to_nack_ns"]) for item in recovery_rows]
+    nack_to_retransmit_values = [float(item["nack_to_retransmit_ns"]) for item in recovery_rows]
+    retransmit_to_first_visible_values = [
+        float(item["retransmit_to_first_visible_ns"]) for item in recovery_rows
+    ]
+    first_visible_to_unblocked_values = [
+        float(item["first_visible_to_unblocked_ns"]) for item in recovery_rows
+    ]
+    detect_to_unblocked_values = [float(item["detect_to_unblocked_ns"]) for item in recovery_rows]
+    return {
+        "read_recovery_sample_count": len(recovery_rows),
+        "read_recovery_detect_to_nack_p50_ns": percentile_or_zero(detect_to_nack_values, 0.50),
+        "read_recovery_detect_to_nack_p95_ns": percentile_or_zero(detect_to_nack_values, 0.95),
+        "read_recovery_detect_to_nack_p99_ns": percentile_or_zero(detect_to_nack_values, 0.99),
+        "read_recovery_nack_to_retransmit_p50_ns": percentile_or_zero(
+            nack_to_retransmit_values, 0.50
+        ),
+        "read_recovery_nack_to_retransmit_p95_ns": percentile_or_zero(
+            nack_to_retransmit_values, 0.95
+        ),
+        "read_recovery_nack_to_retransmit_p99_ns": percentile_or_zero(
+            nack_to_retransmit_values, 0.99
+        ),
+        "read_recovery_retransmit_to_first_visible_p50_ns": percentile_or_zero(
+            retransmit_to_first_visible_values, 0.50
+        ),
+        "read_recovery_retransmit_to_first_visible_p95_ns": percentile_or_zero(
+            retransmit_to_first_visible_values, 0.95
+        ),
+        "read_recovery_retransmit_to_first_visible_p99_ns": percentile_or_zero(
+            retransmit_to_first_visible_values, 0.99
+        ),
+        "read_recovery_first_visible_to_unblocked_p50_ns": percentile_or_zero(
+            first_visible_to_unblocked_values, 0.50
+        ),
+        "read_recovery_first_visible_to_unblocked_p95_ns": percentile_or_zero(
+            first_visible_to_unblocked_values, 0.95
+        ),
+        "read_recovery_first_visible_to_unblocked_p99_ns": percentile_or_zero(
+            first_visible_to_unblocked_values, 0.99
+        ),
+        "read_recovery_detect_to_unblocked_p50_ns": percentile_or_zero(
+            detect_to_unblocked_values, 0.50
+        ),
+        "read_recovery_detect_to_unblocked_p95_ns": percentile_or_zero(
+            detect_to_unblocked_values, 0.95
+        ),
+        "read_recovery_detect_to_unblocked_p99_ns": percentile_or_zero(
+            detect_to_unblocked_values, 0.99
+        ),
+        "read_recovery_detect_to_nack_mean_ns": round(statistics.fmean(detect_to_nack_values), 6)
+        if detect_to_nack_values
+        else 0.0,
+        "read_recovery_nack_to_retransmit_mean_ns": round(
+            statistics.fmean(nack_to_retransmit_values), 6
+        )
+        if nack_to_retransmit_values
+        else 0.0,
+        "read_recovery_retransmit_to_first_visible_mean_ns": round(
+            statistics.fmean(retransmit_to_first_visible_values), 6
+        )
+        if retransmit_to_first_visible_values
+        else 0.0,
+        "read_recovery_first_visible_to_unblocked_mean_ns": round(
+            statistics.fmean(first_visible_to_unblocked_values), 6
+        )
+        if first_visible_to_unblocked_values
+        else 0.0,
+        "read_recovery_detect_to_unblocked_mean_ns": round(
+            statistics.fmean(detect_to_unblocked_values), 6
+        )
+        if detect_to_unblocked_values
+        else 0.0,
+    }
+
+
+def classify_read_pre_failure_stage(row: dict[str, Any]) -> str:
+    if not row["terminal_resource_exhaust"]:
+        return "no-resource-exhaust"
+    if row["arrival_block_reserved_at_ns"] > 0 and row["context_allocated_retry"]:
+        return "context-allocated-retry-before-visible"
+    if row["arrival_block_reserved_at_ns"] > 0:
+        return "arrival-reserved-before-visible"
+    if row["first_packet_no_context_count"] > 0:
+        return "first-packet-no-context"
+    return "target-registered-only"
+
+
+def aggregate_read_pre_admission_rows(rows: list[dict[str, str]]) -> dict[str, Any]:
+    pre_rows = build_read_pre_admission_rows(rows)
+    retry_count = sum(1 for row in pre_rows if row["context_allocated_retry"])
+    terminal_resource_exhaust_count = sum(
+        1 for row in pre_rows if row["terminal_resource_exhaust"]
+    )
+    first_packet_no_context_count_total = sum(
+        row["first_packet_no_context_count"] for row in pre_rows
+    )
+    arrival_reserve_fail_count_total = sum(
+        row["arrival_reserve_fail_count"] for row in pre_rows
+    )
+
+    target_to_first_no_context_values = [
+        float(row["target_to_first_no_context_ns"])
+        for row in pre_rows
+        if row["target_to_first_no_context_ns"] > 0
+    ]
+    target_to_arrival_reserved_values = [
+        float(row["target_to_arrival_reserved_ns"])
+        for row in pre_rows
+        if row["target_to_arrival_reserved_ns"] > 0
+    ]
+    first_no_context_to_arrival_reserved_values = [
+        float(row["first_no_context_to_arrival_reserved_ns"])
+        for row in pre_rows
+        if row["first_no_context_to_arrival_reserved_ns"] > 0
+    ]
+    arrival_reserved_to_first_visible_values = [
+        float(row["arrival_reserved_to_first_response_visible_ns"])
+        for row in pre_rows
+        if row["arrival_reserved_to_first_response_visible_ns"] > 0
+    ]
+    target_hold_to_release_values = [
+        float(row["target_hold_to_release_ns"])
+        for row in pre_rows
+        if row["target_hold_to_release_ns"] > 0
+    ]
+    arrival_hold_to_release_values = [
+        float(row["arrival_hold_to_release_ns"])
+        for row in pre_rows
+        if row["arrival_hold_to_release_ns"] > 0
+    ]
+
+    failure_rows = [row for row in pre_rows if row["terminal_resource_exhaust"]]
+    failure_stage_counts = {
+        "target-registered-only": 0,
+        "first-packet-no-context": 0,
+        "arrival-reserved-before-visible": 0,
+        "context-allocated-retry-before-visible": 0,
+    }
+    for row in failure_rows:
+        stage = classify_read_pre_failure_stage(row)
+        if stage in failure_stage_counts:
+            failure_stage_counts[stage] += 1
+
+    target_to_terminal_resource_exhaust_values = [
+        float(row["target_to_terminal_resource_exhaust_ns"])
+        for row in failure_rows
+        if row["target_to_terminal_resource_exhaust_ns"] > 0
+    ]
+    first_no_context_to_terminal_resource_exhaust_values = [
+        float(row["first_no_context_to_terminal_resource_exhaust_ns"])
+        for row in failure_rows
+        if row["first_no_context_to_terminal_resource_exhaust_ns"] > 0
+    ]
+
+    dominant_failure_stage = ""
+    if any(failure_stage_counts.values()):
+        dominant_failure_stage = max(
+            failure_stage_counts.items(), key=lambda item: item[1]
+        )[0]
+
+    return {
+        "read_pre_admission_sample_count": len(pre_rows),
+        "read_pre_context_allocated_retry_count": retry_count,
+        "read_pre_terminal_resource_exhaust_count": terminal_resource_exhaust_count,
+        "read_pre_first_packet_no_context_count_total": first_packet_no_context_count_total,
+        "read_pre_arrival_reserve_fail_count_total": arrival_reserve_fail_count_total,
+        "read_pre_target_to_first_no_context_p50_ns": percentile_or_zero(
+            target_to_first_no_context_values, 0.50
+        ),
+        "read_pre_target_to_first_no_context_p95_ns": percentile_or_zero(
+            target_to_first_no_context_values, 0.95
+        ),
+        "read_pre_target_to_arrival_reserved_p50_ns": percentile_or_zero(
+            target_to_arrival_reserved_values, 0.50
+        ),
+        "read_pre_target_to_arrival_reserved_p95_ns": percentile_or_zero(
+            target_to_arrival_reserved_values, 0.95
+        ),
+        "read_pre_first_no_context_to_arrival_reserved_p50_ns": percentile_or_zero(
+            first_no_context_to_arrival_reserved_values, 0.50
+        ),
+        "read_pre_first_no_context_to_arrival_reserved_p95_ns": percentile_or_zero(
+            first_no_context_to_arrival_reserved_values, 0.95
+        ),
+        "read_pre_arrival_reserved_to_first_response_visible_p50_ns": percentile_or_zero(
+            arrival_reserved_to_first_visible_values, 0.50
+        ),
+        "read_pre_arrival_reserved_to_first_response_visible_p95_ns": percentile_or_zero(
+            arrival_reserved_to_first_visible_values, 0.95
+        ),
+        "read_pre_target_hold_to_release_p50_ns": percentile_or_zero(
+            target_hold_to_release_values, 0.50
+        ),
+        "read_pre_target_hold_to_release_p95_ns": percentile_or_zero(
+            target_hold_to_release_values, 0.95
+        ),
+        "read_pre_arrival_hold_to_release_p50_ns": percentile_or_zero(
+            arrival_hold_to_release_values, 0.50
+        ),
+        "read_pre_arrival_hold_to_release_p95_ns": percentile_or_zero(
+            arrival_hold_to_release_values, 0.95
+        ),
+        "read_pre_target_to_terminal_resource_exhaust_p50_ns": percentile_or_zero(
+            target_to_terminal_resource_exhaust_values, 0.50
+        ),
+        "read_pre_target_to_terminal_resource_exhaust_p95_ns": percentile_or_zero(
+            target_to_terminal_resource_exhaust_values, 0.95
+        ),
+        "read_pre_first_no_context_to_terminal_resource_exhaust_p50_ns": percentile_or_zero(
+            first_no_context_to_terminal_resource_exhaust_values, 0.50
+        ),
+        "read_pre_first_no_context_to_terminal_resource_exhaust_p95_ns": percentile_or_zero(
+            first_no_context_to_terminal_resource_exhaust_values, 0.95
+        ),
+        "read_pre_failure_target_registered_only_count": failure_stage_counts[
+            "target-registered-only"
+        ],
+        "read_pre_failure_first_packet_no_context_only_count": failure_stage_counts[
+            "first-packet-no-context"
+        ],
+        "read_pre_failure_arrival_reserved_before_visible_count": failure_stage_counts[
+            "arrival-reserved-before-visible"
+        ],
+        "read_pre_failure_context_allocated_retry_count": failure_stage_counts[
+            "context-allocated-retry-before-visible"
+        ],
+        "read_pre_failure_dominant_stage": dominant_failure_stage,
+    }
+
+
+def classify_read_recovery_farthest_stage(row: dict[str, Any]) -> str:
+    if int(row.get("reassembly_unblocked_at_ns", 0)) > 0:
+        return "reassembly-unblocked"
+    if int(row.get("missing_fragment_first_visible_at_ns", 0)) > 0:
+        return "missing-fragment-visible"
+    if int(row.get("missing_fragment_retransmit_tx_at_ns", 0)) > 0:
+        return "retransmit-tx"
+    if int(row.get("gap_nack_observed_at_sender_ns", 0)) > 0:
+        return "nack-observed-at-sender"
+    if int(row.get("gap_nack_sent_at_ns", 0)) > 0:
+        return "nack-sent"
+    if int(row.get("gap_detected_at_ns", 0)) > 0:
+        return "gap-detected"
+    return "tracked-no-gap"
+
+
+def aggregate_read_recovery_failure_rows(rows: list[dict[str, str]]) -> dict[str, Any]:
+    progress_rows = build_read_recovery_progress(rows)
+    failure_rows = [row for row in progress_rows if not row["success"]]
+    failure_stage_counts = {
+        "gap-detected": 0,
+        "nack-sent": 0,
+        "nack-observed-at-sender": 0,
+        "retransmit-tx": 0,
+        "missing-fragment-visible": 0,
+        "reassembly-unblocked": 0,
+    }
+    for row in failure_rows:
+        stage = classify_read_recovery_farthest_stage(row)
+        if stage in failure_stage_counts:
+            failure_stage_counts[stage] += 1
+
+    detect_to_nack_values = [
+        float(row["detect_to_nack_ns"]) for row in failure_rows if int(row["detect_to_nack_ns"]) > 0
+    ]
+    nack_to_observed_values = [
+        float(row["nack_to_observed_at_sender_ns"])
+        for row in failure_rows
+        if int(row["nack_to_observed_at_sender_ns"]) > 0
+    ]
+    observed_to_retransmit_values = [
+        float(row["observed_at_sender_to_retransmit_ns"])
+        for row in failure_rows
+        if int(row["observed_at_sender_to_retransmit_ns"]) > 0
+    ]
+    retransmit_to_terminal_values = [
+        float(row["retransmit_to_terminal_ns"])
+        for row in failure_rows
+        if int(row["retransmit_to_terminal_ns"]) > 0
+    ]
+    detect_to_terminal_values = [
+        float(row["detect_to_terminal_ns"])
+        for row in failure_rows
+        if int(row["detect_to_terminal_ns"]) > 0
+    ]
+
+    dominant_stage = ""
+    if any(failure_stage_counts.values()):
+        dominant_stage = max(failure_stage_counts.items(), key=lambda item: item[1])[0]
+
+    return {
+        "read_recovery_tracked_count": len(progress_rows),
+        "read_recovery_failure_tracked_count": len(failure_rows),
+        "read_recovery_failure_gap_detect_only_count": failure_stage_counts["gap-detected"],
+        "read_recovery_failure_nack_sent_only_count": failure_stage_counts["nack-sent"],
+        "read_recovery_failure_nack_observed_only_count": failure_stage_counts[
+            "nack-observed-at-sender"
+        ],
+        "read_recovery_failure_retransmit_only_count": failure_stage_counts["retransmit-tx"],
+        "read_recovery_failure_first_visible_only_count": failure_stage_counts[
+            "missing-fragment-visible"
+        ],
+        "read_recovery_failure_reassembly_before_terminal_count": failure_stage_counts[
+            "reassembly-unblocked"
+        ],
+        "read_recovery_failure_detect_to_nack_p50_ns": percentile_or_zero(
+            detect_to_nack_values, 0.50
+        ),
+        "read_recovery_failure_detect_to_nack_p95_ns": percentile_or_zero(
+            detect_to_nack_values, 0.95
+        ),
+        "read_recovery_failure_nack_to_observed_at_sender_p50_ns": percentile_or_zero(
+            nack_to_observed_values, 0.50
+        ),
+        "read_recovery_failure_nack_to_observed_at_sender_p95_ns": percentile_or_zero(
+            nack_to_observed_values, 0.95
+        ),
+        "read_recovery_failure_observed_at_sender_to_retransmit_p50_ns": percentile_or_zero(
+            observed_to_retransmit_values, 0.50
+        ),
+        "read_recovery_failure_observed_at_sender_to_retransmit_p95_ns": percentile_or_zero(
+            observed_to_retransmit_values, 0.95
+        ),
+        "read_recovery_failure_retransmit_to_terminal_p50_ns": percentile_or_zero(
+            retransmit_to_terminal_values, 0.50
+        ),
+        "read_recovery_failure_retransmit_to_terminal_p95_ns": percentile_or_zero(
+            retransmit_to_terminal_values, 0.95
+        ),
+        "read_recovery_failure_detect_to_terminal_p50_ns": percentile_or_zero(
+            detect_to_terminal_values, 0.50
+        ),
+        "read_recovery_failure_detect_to_terminal_p95_ns": percentile_or_zero(
+            detect_to_terminal_values, 0.95
+        ),
+        "read_recovery_failure_dominant_stage": dominant_stage,
     }
 
 
@@ -2059,6 +2668,7 @@ def execute_run(repo: Path, run_spec: dict[str, Any], runs_dir: Path, *, drain_w
     diagnostic_rows = read_csv_rows(diagnostic_dst if diagnostic_artifact else None)
     send_stage_latency_rows = build_send_stage_latency(completion_rows)
     read_stage_latency_rows = build_read_stage_latency(completion_rows)
+    read_recovery_latency_rows = build_read_recovery_latency(completion_rows)
     tpdc_session_progress_rows = read_csv_rows(tpdc_session_progress_dst if tpdc_session_progress_artifact_csv else None)
     peer_pair_progress = build_peer_pair_progress(completion_rows, failure_rows, diagnostic_rows)
     peer_pair_progress_artifact = run_dir / "peer-pair-progress.json"
@@ -2081,6 +2691,11 @@ def execute_run(repo: Path, run_spec: dict[str, Any], runs_dir: Path, *, drain_w
     read_stage_latency_artifact = run_dir / "read-stage-latency.json"
     read_stage_latency_artifact.write_text(
         json.dumps(read_stage_latency_rows, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    read_recovery_latency_artifact = run_dir / "read-recovery-latency.json"
+    read_recovery_latency_artifact.write_text(
+        json.dumps(read_recovery_latency_rows, indent=2, sort_keys=True),
         encoding="utf-8",
     )
 
@@ -2145,6 +2760,7 @@ def execute_run(repo: Path, run_spec: dict[str, Any], runs_dir: Path, *, drain_w
         "completion_artifact": completion_artifact,
         "send_stage_latency_artifact": str(send_stage_latency_artifact),
         "read_stage_latency_artifact": str(read_stage_latency_artifact),
+        "read_recovery_latency_artifact": str(read_recovery_latency_artifact),
         "failure_artifact": failure_artifact,
         "diagnostic_artifact": diagnostic_artifact,
         "peer_pair_progress_artifact": str(peer_pair_progress_artifact),
@@ -2165,6 +2781,9 @@ def execute_run(repo: Path, run_spec: dict[str, Any], runs_dir: Path, *, drain_w
     summary.update(aggregate_completion_rows(window_completion_rows, simulation_time))
     summary.update(aggregate_send_stage_rows(window_completion_rows))
     summary.update(aggregate_read_stage_rows(window_completion_rows))
+    summary.update(aggregate_read_pre_admission_rows(window_completion_rows))
+    summary.update(aggregate_read_recovery_rows(window_completion_rows))
+    summary.update(aggregate_read_recovery_failure_rows(window_completion_rows))
     summary.update(aggregate_final_protocol_state(protocol_rows))
     summary.update(aggregate_failure_rows(failure_rows))
     summary.update(aggregate_diagnostic_rows(diagnostic_rows))

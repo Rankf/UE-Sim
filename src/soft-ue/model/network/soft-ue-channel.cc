@@ -405,6 +405,7 @@ SoftUeChannel::Transmit (Ptr<Packet> packet, Ptr<NetDevice> src, uint32_t source
                << " size=" << packet->GetSize () << " B (delivered after delay)");
   m_txTrace (packet, sourceFep, destFep);
   const bool isResponse = IsResponsePacket (packet);
+  const bool isGapNackControl = IsGapNackControlPacket (packet);
   EnsurePathStateSize ();
 
   // Transmit to all destination devices
@@ -428,7 +429,10 @@ SoftUeChannel::Transmit (Ptr<Packet> packet, Ptr<NetDevice> src, uint32_t source
                   --m_dropNextResponses;
                   continue;
                 }
-              if (m_rng && m_rng->GetValue () < m_dropProbability)
+              // Keep GAP-NACK recovery signals out of mixed random drop fault injection.
+              if (!isGapNackControl &&
+                  m_rng &&
+                  m_rng->GetValue () < m_dropProbability)
                 {
                   continue;
                 }
@@ -464,7 +468,10 @@ SoftUeChannel::Transmit (Ptr<Packet> packet, Ptr<NetDevice> src, uint32_t source
                                                m_heldTransmission.delay);
                     }
                 }
-              else if (!m_hasHeldTransmission && m_rng && m_rng->GetValue () < m_reorderProbability)
+              else if (!m_hasHeldTransmission &&
+                       !isGapNackControl &&
+                       m_rng &&
+                       m_rng->GetValue () < m_reorderProbability)
                 {
                   m_hasHeldTransmission = true;
                   m_heldTransmission.packet = packet->Copy ();
@@ -791,6 +798,19 @@ SoftUeChannel::IsResponsePacket (Ptr<Packet> packet) const
     }
   SoftUeMetadataTag metadataTag;
   return packet->PeekPacketTag (metadataTag) && metadataTag.IsResponse ();
+}
+
+bool
+SoftUeChannel::IsGapNackControlPacket (Ptr<Packet> packet) const
+{
+  if (!packet)
+    {
+      return false;
+    }
+
+  SoftUeTpdcControlTag controlTag;
+  return packet->PeekPacketTag (controlTag) &&
+         ((controlTag.GetFlags () & SOFT_UE_TPDC_CTRL_GAP_NACK) != 0);
 }
 
 } // namespace ns3

@@ -254,9 +254,52 @@ SesManager::ProcessSendRequest (Ptr<ExtendedOperationMetadata> metadata, Ptr<Pac
   const uint64_t preservedReceiveConsumeCompleteNs = requestState.receiveConsumeCompleteNs;
   const uint64_t preservedResponseVisibleNs = requestState.responseVisibleNs;
   const uint64_t preservedReadResponseGeneratedNs = requestState.readResponseGeneratedNs;
+  const uint64_t preservedReadResponseFirstDispatchAttemptNs =
+      requestState.readResponseFirstDispatchAttemptNs;
+  const uint64_t preservedReadResponseFirstFragmentSentNs =
+      requestState.readResponseFirstFragmentSentNs;
   const uint64_t preservedReadResponseFirstVisibleNs = requestState.readResponseFirstVisibleNs;
   const uint64_t preservedReadResponseReassemblyCompleteNs =
       requestState.readResponseReassemblyCompleteNs;
+  const uint64_t preservedReadResponseTargetRegisteredNs =
+      requestState.readResponseTargetRegisteredNs;
+  const uint64_t preservedReadResponseFirstPacketNoContextNs =
+      requestState.readResponseFirstPacketNoContextNs;
+  const uint64_t preservedReadResponseArrivalBlockReservedNs =
+      requestState.readResponseArrivalBlockReservedNs;
+  const uint64_t preservedReadResponseContextAllocatedRetryNs =
+      requestState.readResponseContextAllocatedRetryNs;
+  const uint64_t preservedReadResponseArrivalContextReleasedNs =
+      requestState.readResponseArrivalContextReleasedNs;
+  const uint64_t preservedReadResponseTargetReleasedNs =
+      requestState.readResponseTargetReleasedNs;
+  const uint32_t preservedReadResponseFirstPacketNoContextCount =
+      requestState.readResponseFirstPacketNoContextCount;
+  const uint32_t preservedReadResponseArrivalReserveFailCount =
+      requestState.readResponseArrivalReserveFailCount;
+  const bool preservedReadRecoveryTracked = requestState.readRecoveryTracked;
+  const uint32_t preservedReadRecoveryMissingChunkIndex =
+      requestState.readRecoveryMissingChunkIndex;
+  const uint32_t preservedReadRecoveryMissingTransportSeq =
+      requestState.readRecoveryMissingTransportSeq;
+  const uint64_t preservedReadRecoveryGapDetectedAtNs =
+      requestState.readRecoveryGapDetectedAtNs;
+  const uint64_t preservedReadRecoveryGapNackSentAtNs =
+      requestState.readRecoveryGapNackSentAtNs;
+  const uint64_t preservedReadRecoveryGapNackObservedAtSenderNs =
+      requestState.readRecoveryGapNackObservedAtSenderNs;
+  const uint64_t preservedReadRecoveryMissingFragmentRetransmitTxAtNs =
+      requestState.readRecoveryMissingFragmentRetransmitTxAtNs;
+  const uint64_t preservedReadRecoveryMissingFragmentFirstVisibleAtNs =
+      requestState.readRecoveryMissingFragmentFirstVisibleAtNs;
+  const uint64_t preservedReadRecoveryReassemblyUnblockedAtNs =
+      requestState.readRecoveryReassemblyUnblockedAtNs;
+  const uint32_t preservedReadRecoveryGapNackSentCount =
+      requestState.readRecoveryGapNackSentCount;
+  const uint32_t preservedReadRecoveryGapNackObservedAtSenderCount =
+      requestState.readRecoveryGapNackObservedAtSenderCount;
+  const uint32_t preservedReadRecoveryMissingFragmentRetransmitCount =
+      requestState.readRecoveryMissingFragmentRetransmitCount;
   const uint32_t preservedDispatchAttemptCount = requestState.dispatchAttemptCount;
   const uint32_t preservedDispatchBudgetBlockCount = requestState.dispatchBudgetBlockCount;
   const uint32_t preservedBlockedQueueEnqueueCount = requestState.blockedQueueEnqueueCount;
@@ -299,10 +342,54 @@ SesManager::ProcessSendRequest (Ptr<ExtendedOperationMetadata> metadata, Ptr<Pac
       metadata->is_retry ? preservedResponseVisibleNs : 0;
   requestState.readResponseGeneratedNs =
       metadata->is_retry ? preservedReadResponseGeneratedNs : 0;
+  requestState.readResponseFirstDispatchAttemptNs =
+      metadata->is_retry ? preservedReadResponseFirstDispatchAttemptNs : 0;
+  requestState.readResponseFirstFragmentSentNs =
+      metadata->is_retry ? preservedReadResponseFirstFragmentSentNs : 0;
   requestState.readResponseFirstVisibleNs =
       metadata->is_retry ? preservedReadResponseFirstVisibleNs : 0;
   requestState.readResponseReassemblyCompleteNs =
       metadata->is_retry ? preservedReadResponseReassemblyCompleteNs : 0;
+  requestState.readResponseTargetRegisteredNs =
+      metadata->is_retry ? preservedReadResponseTargetRegisteredNs : 0;
+  requestState.readResponseFirstPacketNoContextNs =
+      metadata->is_retry ? preservedReadResponseFirstPacketNoContextNs : 0;
+  requestState.readResponseArrivalBlockReservedNs =
+      metadata->is_retry ? preservedReadResponseArrivalBlockReservedNs : 0;
+  requestState.readResponseContextAllocatedRetryNs =
+      metadata->is_retry ? preservedReadResponseContextAllocatedRetryNs : 0;
+  requestState.readResponseArrivalContextReleasedNs =
+      metadata->is_retry ? preservedReadResponseArrivalContextReleasedNs : 0;
+  requestState.readResponseTargetReleasedNs =
+      metadata->is_retry ? preservedReadResponseTargetReleasedNs : 0;
+  requestState.readResponseFirstPacketNoContextCount =
+      metadata->is_retry ? preservedReadResponseFirstPacketNoContextCount : 0;
+  requestState.readResponseArrivalReserveFailCount =
+      metadata->is_retry ? preservedReadResponseArrivalReserveFailCount : 0;
+  requestState.readRecoveryTracked =
+      metadata->is_retry ? preservedReadRecoveryTracked : false;
+  requestState.readRecoveryMissingChunkIndex =
+      metadata->is_retry ? preservedReadRecoveryMissingChunkIndex : 0;
+  requestState.readRecoveryMissingTransportSeq =
+      metadata->is_retry ? preservedReadRecoveryMissingTransportSeq : 0;
+  requestState.readRecoveryGapDetectedAtNs =
+      metadata->is_retry ? preservedReadRecoveryGapDetectedAtNs : 0;
+  requestState.readRecoveryGapNackSentAtNs =
+      metadata->is_retry ? preservedReadRecoveryGapNackSentAtNs : 0;
+  requestState.readRecoveryGapNackObservedAtSenderNs =
+      metadata->is_retry ? preservedReadRecoveryGapNackObservedAtSenderNs : 0;
+  requestState.readRecoveryMissingFragmentRetransmitTxAtNs =
+      metadata->is_retry ? preservedReadRecoveryMissingFragmentRetransmitTxAtNs : 0;
+  requestState.readRecoveryMissingFragmentFirstVisibleAtNs =
+      metadata->is_retry ? preservedReadRecoveryMissingFragmentFirstVisibleAtNs : 0;
+  requestState.readRecoveryReassemblyUnblockedAtNs =
+      metadata->is_retry ? preservedReadRecoveryReassemblyUnblockedAtNs : 0;
+  requestState.readRecoveryGapNackSentCount =
+      metadata->is_retry ? preservedReadRecoveryGapNackSentCount : 0;
+  requestState.readRecoveryGapNackObservedAtSenderCount =
+      metadata->is_retry ? preservedReadRecoveryGapNackObservedAtSenderCount : 0;
+  requestState.readRecoveryMissingFragmentRetransmitCount =
+      metadata->is_retry ? preservedReadRecoveryMissingFragmentRetransmitCount : 0;
   requestState.dispatchAttemptCount =
       metadata->is_retry ? preservedDispatchAttemptCount : 0;
   requestState.dispatchBudgetBlockCount =
@@ -518,6 +605,29 @@ SesManager::ProcessReceiveResponse (const PdcSesResponse& response)
           SoftUeTimingTag timingTag;
           if (response.packet && response.packet->PeekPacketTag (timingTag))
             {
+              const Time dispatchAttemptTimestamp = timingTag.GetDetailTimestamp ();
+              if (dispatchAttemptTimestamp != Time::Max () &&
+                  dispatchAttemptTimestamp.GetNanoSeconds () > 0)
+                {
+                  const uint64_t dispatchAttemptNs =
+                      static_cast<uint64_t> (dispatchAttemptTimestamp.GetNanoSeconds ());
+                  if (state.readResponseFirstDispatchAttemptNs == 0 ||
+                      dispatchAttemptNs < state.readResponseFirstDispatchAttemptNs)
+                    {
+                      state.readResponseFirstDispatchAttemptNs = dispatchAttemptNs;
+                    }
+                }
+              const Time sentTimestamp = timingTag.GetTimestamp ();
+              if (sentTimestamp != Time::Max () && sentTimestamp.GetNanoSeconds () > 0)
+                {
+                  const uint64_t sentNs =
+                      static_cast<uint64_t> (sentTimestamp.GetNanoSeconds ());
+                  if (state.readResponseFirstFragmentSentNs == 0 ||
+                      sentNs < state.readResponseFirstFragmentSentNs)
+                    {
+                      state.readResponseFirstFragmentSentNs = sentNs;
+                    }
+                }
               const Time auxTimestamp = timingTag.GetAuxTimestamp ();
               if (auxTimestamp != Time::Max () && auxTimestamp.GetNanoSeconds () > 0)
                 {
@@ -544,6 +654,21 @@ SesManager::ProcessReceiveResponse (const PdcSesResponse& response)
                                                              response.packet);
           if (!rxResult.handled)
             {
+              return true;
+            }
+          if (rxResult.failed ||
+              rxResult.return_code != static_cast<uint8_t> (ResponseReturnCode::RC_OK))
+            {
+              RecordFailureSnapshot (
+                  key,
+                  OpType::READ,
+                  rxResult.return_code,
+                  rxResult.return_code == static_cast<uint8_t> (ResponseReturnCode::RC_RESOURCE_EXHAUST)
+                      ? "read_response_receive_resource_exhausted"
+                      : "read_response_receive_failed",
+                  "handle_incoming_read_response_packet_failed");
+              SetRequestCompletionOutcome (key, rxResult.return_code, 0);
+              TerminalizeRequest (key, RequestTerminalReason::PROTOCOL_ERROR);
               return true;
             }
           if (rxResult.delivery_complete)
@@ -1227,6 +1352,394 @@ SesManager::NotifyPeerCreditsAvailable (uint32_t peerFep)
     }
   ScheduleBlockedPeerWakeup (peerFep);
   SchedulePendingResponseDrain (peerFep, true);
+}
+
+void
+SesManager::NotifyExternalDiagnosticEvent (const std::string& name, const std::string& detail)
+{
+  RecordDiagnosticEvent (name, detail);
+}
+
+void
+SesManager::NotifyReadResponseGapDetected (uint64_t jobId,
+                                           uint16_t msgId,
+                                           uint32_t peerFep,
+                                           uint32_t missingChunkIndex,
+                                           uint64_t detectedAtNs)
+{
+  const RequestKey key = BuildRequestKey (jobId, msgId, peerFep);
+  auto it = m_requestStates.find (key);
+  if (it == m_requestStates.end ())
+    {
+      return;
+    }
+
+  RequestLifecycleState& state = it->second;
+  if (state.terminalized || !state.metadata || state.metadata->op_type != OpType::READ)
+    {
+      return;
+    }
+
+  if (!state.readRecoveryTracked)
+    {
+      state.readRecoveryTracked = true;
+      state.readRecoveryMissingChunkIndex = missingChunkIndex;
+      state.readRecoveryGapDetectedAtNs = detectedAtNs;
+    }
+  RecordDiagnosticEvent ("ReadGapDetected",
+                         "job=" + std::to_string (jobId) +
+                         " msg=" + std::to_string (msgId) +
+                         " peer=" + std::to_string (peerFep) +
+                         " missing_chunk=" + std::to_string (missingChunkIndex) +
+                         " detected_at_ns=" + std::to_string (detectedAtNs));
+}
+
+void
+SesManager::NotifyReadResponseTargetRegistered (uint64_t jobId,
+                                                uint16_t msgId,
+                                                uint32_t peerFep,
+                                                uint64_t registeredAtNs)
+{
+  const RequestKey key = BuildRequestKey (jobId, msgId, peerFep);
+  auto it = m_requestStates.find (key);
+  if (it == m_requestStates.end ())
+    {
+      return;
+    }
+
+  RequestLifecycleState& state = it->second;
+  if (state.terminalized || !state.metadata || state.metadata->op_type != OpType::READ)
+    {
+      return;
+    }
+
+  state.readResponseTargetRegistered = true;
+  if (registeredAtNs > 0 &&
+      (state.readResponseTargetRegisteredNs == 0 ||
+       registeredAtNs < state.readResponseTargetRegisteredNs))
+    {
+      state.readResponseTargetRegisteredNs = registeredAtNs;
+    }
+}
+
+void
+SesManager::NotifyReadResponseFirstPacketNoContext (uint64_t jobId,
+                                                    uint16_t msgId,
+                                                    uint32_t peerFep,
+                                                    uint64_t observedAtNs)
+{
+  const RequestKey key = BuildRequestKey (jobId, msgId, peerFep);
+  auto it = m_requestStates.find (key);
+  if (it == m_requestStates.end ())
+    {
+      return;
+    }
+
+  RequestLifecycleState& state = it->second;
+  if (state.terminalized || !state.metadata || state.metadata->op_type != OpType::READ)
+    {
+      return;
+    }
+
+  if (state.readResponseFirstPacketNoContextNs == 0)
+    {
+      state.readResponseFirstPacketNoContextNs = observedAtNs;
+    }
+  state.readResponseFirstPacketNoContextCount++;
+}
+
+void
+SesManager::NotifyReadResponseArrivalBlockReserved (uint64_t jobId,
+                                                    uint16_t msgId,
+                                                    uint32_t peerFep,
+                                                    uint64_t reservedAtNs)
+{
+  const RequestKey key = BuildRequestKey (jobId, msgId, peerFep);
+  auto it = m_requestStates.find (key);
+  if (it == m_requestStates.end ())
+    {
+      return;
+    }
+
+  RequestLifecycleState& state = it->second;
+  if (state.terminalized || !state.metadata || state.metadata->op_type != OpType::READ)
+    {
+      return;
+    }
+
+  if (reservedAtNs > 0 &&
+      (state.readResponseArrivalBlockReservedNs == 0 ||
+       reservedAtNs < state.readResponseArrivalBlockReservedNs))
+    {
+      state.readResponseArrivalBlockReservedNs = reservedAtNs;
+    }
+  if (state.readResponseContextAllocatedRetryNs == 0 &&
+      (state.readResponseArrivalReserveFailCount > 0 ||
+       state.readResponseFirstPacketNoContextCount > 1))
+    {
+      state.readResponseContextAllocatedRetryNs = reservedAtNs;
+    }
+}
+
+void
+SesManager::NotifyReadResponseArrivalBlockReserveFailed (uint64_t jobId,
+                                                         uint16_t msgId,
+                                                         uint32_t peerFep,
+                                                         uint64_t failedAtNs)
+{
+  const RequestKey key = BuildRequestKey (jobId, msgId, peerFep);
+  auto it = m_requestStates.find (key);
+  if (it == m_requestStates.end ())
+    {
+      return;
+    }
+
+  RequestLifecycleState& state = it->second;
+  if (state.terminalized || !state.metadata || state.metadata->op_type != OpType::READ)
+    {
+      return;
+    }
+
+  if (state.readResponseFirstPacketNoContextNs == 0)
+    {
+      state.readResponseFirstPacketNoContextNs = failedAtNs;
+    }
+  state.readResponseArrivalReserveFailCount++;
+}
+
+void
+SesManager::NotifyReadResponseArrivalContextReleased (uint64_t jobId,
+                                                      uint16_t msgId,
+                                                      uint32_t peerFep,
+                                                      uint64_t releasedAtNs)
+{
+  const RequestKey key = BuildRequestKey (jobId, msgId, peerFep);
+  auto it = m_requestStates.find (key);
+  if (it == m_requestStates.end ())
+    {
+      return;
+    }
+
+  RequestLifecycleState& state = it->second;
+  if (!state.metadata || state.metadata->op_type != OpType::READ)
+    {
+      return;
+    }
+
+  if (state.readResponseArrivalContextReleasedNs == 0)
+    {
+      state.readResponseArrivalContextReleasedNs = releasedAtNs;
+    }
+}
+
+void
+SesManager::NotifyReadResponseTargetReleased (uint64_t jobId,
+                                              uint16_t msgId,
+                                              uint32_t peerFep,
+                                              uint64_t releasedAtNs)
+{
+  const RequestKey key = BuildRequestKey (jobId, msgId, peerFep);
+  auto it = m_requestStates.find (key);
+  if (it == m_requestStates.end ())
+    {
+      return;
+    }
+
+  RequestLifecycleState& state = it->second;
+  if (!state.metadata || state.metadata->op_type != OpType::READ)
+    {
+      return;
+    }
+
+  if (state.readResponseTargetReleasedNs == 0)
+    {
+      state.readResponseTargetReleasedNs = releasedAtNs;
+    }
+  state.readResponseTargetRegistered = false;
+}
+
+void
+SesManager::NotifyReadResponseGapNackSent (uint64_t jobId,
+                                           uint16_t msgId,
+                                           uint32_t peerFep,
+                                           uint32_t missingTransportSeq,
+                                           uint64_t sentAtNs)
+{
+  const RequestKey key = BuildRequestKey (jobId, msgId, peerFep);
+  auto it = m_requestStates.find (key);
+  if (it == m_requestStates.end ())
+    {
+      return;
+    }
+
+  RequestLifecycleState& state = it->second;
+  if (state.terminalized || !state.metadata || state.metadata->op_type != OpType::READ)
+    {
+      return;
+    }
+
+  state.readRecoveryTracked = true;
+  if (state.readRecoveryMissingTransportSeq == 0)
+    {
+      state.readRecoveryMissingTransportSeq = missingTransportSeq;
+    }
+  if (sentAtNs > 0 &&
+      (state.readRecoveryGapNackSentAtNs == 0 ||
+       sentAtNs < state.readRecoveryGapNackSentAtNs))
+    {
+      state.readRecoveryGapNackSentAtNs = sentAtNs;
+    }
+  state.readRecoveryGapNackSentCount++;
+}
+
+void
+SesManager::NotifyReadResponseGapNackObservedAtSender (uint64_t jobId,
+                                                       uint16_t msgId,
+                                                       uint32_t peerFep,
+                                                       uint32_t missingTransportSeq,
+                                                       uint64_t observedAtNs)
+{
+  const RequestKey key = BuildRequestKey (jobId, msgId, peerFep);
+  auto it = m_requestStates.find (key);
+  if (it == m_requestStates.end ())
+    {
+      return;
+    }
+
+  RequestLifecycleState& state = it->second;
+  if (state.terminalized || !state.metadata || state.metadata->op_type != OpType::READ)
+    {
+      return;
+    }
+
+  state.readRecoveryTracked = true;
+  if (state.readRecoveryMissingTransportSeq == 0)
+    {
+      state.readRecoveryMissingTransportSeq = missingTransportSeq;
+    }
+  if (observedAtNs > 0 &&
+      (state.readRecoveryGapNackObservedAtSenderNs == 0 ||
+       observedAtNs < state.readRecoveryGapNackObservedAtSenderNs))
+    {
+      state.readRecoveryGapNackObservedAtSenderNs = observedAtNs;
+    }
+  state.readRecoveryGapNackObservedAtSenderCount++;
+}
+
+void
+SesManager::NotifyReadResponseGapRetransmitTx (uint64_t jobId,
+                                               uint16_t msgId,
+                                               uint32_t peerFep,
+                                               uint32_t missingTransportSeq,
+                                               uint64_t retransmitTxAtNs)
+{
+  const RequestKey key = BuildRequestKey (jobId, msgId, peerFep);
+  auto it = m_requestStates.find (key);
+  if (it == m_requestStates.end ())
+    {
+      return;
+    }
+
+  RequestLifecycleState& state = it->second;
+  if (state.terminalized || !state.metadata || state.metadata->op_type != OpType::READ)
+    {
+      return;
+    }
+
+  state.readRecoveryTracked = true;
+  if (state.readRecoveryMissingTransportSeq == 0)
+    {
+      state.readRecoveryMissingTransportSeq = missingTransportSeq;
+    }
+  if (retransmitTxAtNs > 0 &&
+      (state.readRecoveryMissingFragmentRetransmitTxAtNs == 0 ||
+       retransmitTxAtNs < state.readRecoveryMissingFragmentRetransmitTxAtNs))
+    {
+      state.readRecoveryMissingFragmentRetransmitTxAtNs = retransmitTxAtNs;
+    }
+  state.readRecoveryMissingFragmentRetransmitCount++;
+}
+
+void
+SesManager::NotifyReadResponseRecoveryVisible (uint64_t jobId,
+                                               uint16_t msgId,
+                                               uint32_t peerFep,
+                                               uint32_t chunkIndex,
+                                               uint64_t gapNackSentAtNs,
+                                               uint64_t retransmitTxAtNs,
+                                               uint64_t visibleAtNs)
+{
+  const RequestKey key = BuildRequestKey (jobId, msgId, peerFep);
+  auto it = m_requestStates.find (key);
+  if (it == m_requestStates.end ())
+    {
+      return;
+    }
+
+  RequestLifecycleState& state = it->second;
+  if (state.terminalized || !state.metadata || state.metadata->op_type != OpType::READ ||
+      !state.readRecoveryTracked || chunkIndex != state.readRecoveryMissingChunkIndex)
+    {
+      return;
+    }
+
+  if (state.readRecoveryMissingFragmentFirstVisibleAtNs == 0)
+    {
+      state.readRecoveryMissingFragmentFirstVisibleAtNs = visibleAtNs;
+    }
+  if (gapNackSentAtNs > 0 &&
+      (state.readRecoveryGapNackSentAtNs == 0 ||
+       gapNackSentAtNs < state.readRecoveryGapNackSentAtNs))
+    {
+      state.readRecoveryGapNackSentAtNs = gapNackSentAtNs;
+    }
+  if (retransmitTxAtNs > 0 &&
+      (state.readRecoveryMissingFragmentRetransmitTxAtNs == 0 ||
+       retransmitTxAtNs < state.readRecoveryMissingFragmentRetransmitTxAtNs))
+    {
+      state.readRecoveryMissingFragmentRetransmitTxAtNs = retransmitTxAtNs;
+    }
+  RecordDiagnosticEvent ("ReadGapRecoveryVisible",
+                         "job=" + std::to_string (jobId) +
+                         " msg=" + std::to_string (msgId) +
+                         " peer=" + std::to_string (peerFep) +
+                         " chunk=" + std::to_string (chunkIndex) +
+                         " gap_nack_sent_at_ns=" + std::to_string (gapNackSentAtNs) +
+                         " retransmit_tx_at_ns=" + std::to_string (retransmitTxAtNs) +
+                         " visible_at_ns=" + std::to_string (visibleAtNs));
+}
+
+void
+SesManager::NotifyReadResponseReassemblyUnblocked (uint64_t jobId,
+                                                   uint16_t msgId,
+                                                   uint32_t peerFep,
+                                                   uint32_t chunkIndex,
+                                                   uint64_t unblockedAtNs)
+{
+  const RequestKey key = BuildRequestKey (jobId, msgId, peerFep);
+  auto it = m_requestStates.find (key);
+  if (it == m_requestStates.end ())
+    {
+      return;
+    }
+
+  RequestLifecycleState& state = it->second;
+  if (state.terminalized || !state.metadata || state.metadata->op_type != OpType::READ ||
+      !state.readRecoveryTracked || chunkIndex != state.readRecoveryMissingChunkIndex)
+    {
+      return;
+    }
+
+  if (state.readRecoveryReassemblyUnblockedAtNs == 0)
+    {
+      state.readRecoveryReassemblyUnblockedAtNs = unblockedAtNs;
+    }
+  RecordDiagnosticEvent ("ReadGapReassemblyUnblocked",
+                         "job=" + std::to_string (jobId) +
+                         " msg=" + std::to_string (msgId) +
+                         " peer=" + std::to_string (peerFep) +
+                         " chunk=" + std::to_string (chunkIndex) +
+                         " unblocked_at_ns=" + std::to_string (unblockedAtNs));
 }
 
 void
@@ -1926,6 +2439,9 @@ SesManager::RecordCompletion (const RequestKey& key, const RequestLifecycleState
       state.createdAtNs > 0 &&
       state.dispatchFirstFragmentSentNs >= state.createdAtNs &&
       state.readResponseGeneratedNs >= state.dispatchFirstFragmentSentNs &&
+      state.readResponseFirstDispatchAttemptNs >= state.readResponseGeneratedNs &&
+      state.readResponseFirstFragmentSentNs >= state.readResponseFirstDispatchAttemptNs &&
+      state.readResponseFirstVisibleNs >= state.readResponseFirstFragmentSentNs &&
       state.readResponseFirstVisibleNs >= state.readResponseGeneratedNs &&
       state.readResponseReassemblyCompleteNs >= state.readResponseFirstVisibleNs &&
       state.terminalizedAtNs >= state.readResponseReassemblyCompleteNs;
@@ -1934,6 +2450,12 @@ SesManager::RecordCompletion (const RequestKey& key, const RequestLifecycleState
       record.read_stage_valid = true;
       record.read_stage_responder_budget_generate_ns =
           state.readResponseGeneratedNs - state.dispatchFirstFragmentSentNs;
+      record.read_stage_pending_response_queue_dispatch_ns =
+          state.readResponseFirstDispatchAttemptNs - state.readResponseGeneratedNs;
+      record.read_stage_response_first_packet_tx_ns =
+          state.readResponseFirstFragmentSentNs - state.readResponseFirstDispatchAttemptNs;
+      record.read_stage_network_return_visibility_ns =
+          state.readResponseFirstVisibleNs - state.readResponseFirstFragmentSentNs;
       record.read_stage_first_response_visible_ns =
           state.readResponseFirstVisibleNs - state.readResponseGeneratedNs;
       record.read_stage_reassembly_complete_ns =
@@ -1942,6 +2464,183 @@ SesManager::RecordCompletion (const RequestKey& key, const RequestLifecycleState
           state.terminalizedAtNs - state.readResponseReassemblyCompleteNs;
       record.read_stage_end_to_end_ns =
           state.terminalizedAtNs - state.createdAtNs;
+    }
+  if (record.opcode == OpType::READ && state.readResponseTargetRegisteredNs > 0)
+    {
+      record.read_pre_admission_tracked = true;
+      record.read_pre_context_allocated_retry =
+          state.readResponseContextAllocatedRetryNs > 0;
+      record.read_pre_terminal_resource_exhaust =
+          !success &&
+          state.finalReturnCode ==
+              static_cast<uint8_t> (ResponseReturnCode::RC_RESOURCE_EXHAUST) &&
+          state.readResponseFirstVisibleNs == 0;
+      record.read_pre_first_packet_no_context_count =
+          state.readResponseFirstPacketNoContextCount;
+      record.read_pre_arrival_reserve_fail_count =
+          state.readResponseArrivalReserveFailCount;
+      record.read_pre_target_registered_at_ns = state.readResponseTargetRegisteredNs;
+      record.read_pre_first_packet_no_context_at_ns =
+          state.readResponseFirstPacketNoContextNs;
+      record.read_pre_arrival_block_reserved_at_ns =
+          state.readResponseArrivalBlockReservedNs;
+      record.read_pre_context_allocated_retry_at_ns =
+          state.readResponseContextAllocatedRetryNs;
+      record.read_pre_target_released_at_ns = state.readResponseTargetReleasedNs;
+      record.read_pre_arrival_context_released_at_ns =
+          state.readResponseArrivalContextReleasedNs;
+      if (state.readResponseFirstPacketNoContextNs >= state.readResponseTargetRegisteredNs &&
+          state.readResponseFirstPacketNoContextNs > 0)
+        {
+          record.read_pre_target_to_first_no_context_ns =
+              state.readResponseFirstPacketNoContextNs - state.readResponseTargetRegisteredNs;
+        }
+      if (state.readResponseArrivalBlockReservedNs >= state.readResponseTargetRegisteredNs &&
+          state.readResponseArrivalBlockReservedNs > 0)
+        {
+          record.read_pre_target_to_arrival_reserved_ns =
+              state.readResponseArrivalBlockReservedNs - state.readResponseTargetRegisteredNs;
+        }
+      if (state.readResponseArrivalBlockReservedNs >= state.readResponseFirstPacketNoContextNs &&
+          state.readResponseArrivalBlockReservedNs > 0 &&
+          state.readResponseFirstPacketNoContextNs > 0)
+        {
+          record.read_pre_first_no_context_to_arrival_reserved_ns =
+              state.readResponseArrivalBlockReservedNs - state.readResponseFirstPacketNoContextNs;
+        }
+      if (state.readResponseFirstVisibleNs >= state.readResponseArrivalBlockReservedNs &&
+          state.readResponseFirstVisibleNs > 0 &&
+          state.readResponseArrivalBlockReservedNs > 0)
+        {
+          record.read_pre_arrival_reserved_to_first_response_visible_ns =
+              state.readResponseFirstVisibleNs - state.readResponseArrivalBlockReservedNs;
+        }
+      if (state.readResponseTargetReleasedNs >= state.readResponseTargetRegisteredNs &&
+          state.readResponseTargetReleasedNs > 0)
+        {
+          record.read_pre_target_hold_to_release_ns =
+              state.readResponseTargetReleasedNs - state.readResponseTargetRegisteredNs;
+        }
+      if (state.readResponseArrivalContextReleasedNs >= state.readResponseArrivalBlockReservedNs &&
+          state.readResponseArrivalContextReleasedNs > 0 &&
+          state.readResponseArrivalBlockReservedNs > 0)
+        {
+          record.read_pre_arrival_hold_to_release_ns =
+              state.readResponseArrivalContextReleasedNs - state.readResponseArrivalBlockReservedNs;
+        }
+      if (record.read_pre_terminal_resource_exhaust &&
+          state.terminalizedAtNs >= state.readResponseTargetRegisteredNs)
+        {
+          record.read_pre_target_to_terminal_resource_exhaust_ns =
+              state.terminalizedAtNs - state.readResponseTargetRegisteredNs;
+        }
+      if (record.read_pre_terminal_resource_exhaust &&
+          state.readResponseFirstPacketNoContextNs > 0 &&
+          state.terminalizedAtNs >= state.readResponseFirstPacketNoContextNs)
+        {
+          record.read_pre_first_no_context_to_terminal_resource_exhaust_ns =
+              state.terminalizedAtNs - state.readResponseFirstPacketNoContextNs;
+        }
+    }
+  if (record.opcode == OpType::READ && state.readRecoveryTracked)
+    {
+      record.read_recovery_tracked = true;
+      record.read_recovery_missing_chunk_index = state.readRecoveryMissingChunkIndex;
+      record.read_recovery_missing_transport_seq = state.readRecoveryMissingTransportSeq;
+      record.read_recovery_gap_detected_at_ns = state.readRecoveryGapDetectedAtNs;
+      record.read_recovery_gap_nack_sent_at_ns = state.readRecoveryGapNackSentAtNs;
+      record.read_recovery_gap_nack_observed_at_sender_ns =
+          state.readRecoveryGapNackObservedAtSenderNs;
+      record.read_recovery_missing_fragment_retransmit_tx_at_ns =
+          state.readRecoveryMissingFragmentRetransmitTxAtNs;
+      record.read_recovery_missing_fragment_first_visible_at_ns =
+          state.readRecoveryMissingFragmentFirstVisibleAtNs;
+      record.read_recovery_reassembly_unblocked_at_ns =
+          state.readRecoveryReassemblyUnblockedAtNs;
+      record.read_recovery_gap_nack_sent_count = state.readRecoveryGapNackSentCount;
+      record.read_recovery_gap_nack_observed_at_sender_count =
+          state.readRecoveryGapNackObservedAtSenderCount;
+      record.read_recovery_missing_fragment_retransmit_count =
+          state.readRecoveryMissingFragmentRetransmitCount;
+
+      if (state.readRecoveryGapDetectedAtNs > 0 &&
+          state.readRecoveryGapNackSentAtNs >= state.readRecoveryGapDetectedAtNs)
+        {
+          record.read_recovery_detect_to_nack_ns =
+              state.readRecoveryGapNackSentAtNs - state.readRecoveryGapDetectedAtNs;
+        }
+      if (state.readRecoveryGapNackSentAtNs > 0 &&
+          state.readRecoveryGapNackObservedAtSenderNs >= state.readRecoveryGapNackSentAtNs)
+        {
+          record.read_recovery_nack_to_observed_at_sender_ns =
+              state.readRecoveryGapNackObservedAtSenderNs - state.readRecoveryGapNackSentAtNs;
+        }
+      if (state.readRecoveryGapNackObservedAtSenderNs > 0 &&
+          state.readRecoveryMissingFragmentRetransmitTxAtNs >=
+              state.readRecoveryGapNackObservedAtSenderNs)
+        {
+          record.read_recovery_observed_at_sender_to_retransmit_ns =
+              state.readRecoveryMissingFragmentRetransmitTxAtNs -
+              state.readRecoveryGapNackObservedAtSenderNs;
+        }
+      if (state.readRecoveryGapNackSentAtNs > 0 &&
+          state.readRecoveryMissingFragmentRetransmitTxAtNs >= state.readRecoveryGapNackSentAtNs)
+        {
+          record.read_recovery_nack_to_retransmit_ns =
+              state.readRecoveryMissingFragmentRetransmitTxAtNs -
+              state.readRecoveryGapNackSentAtNs;
+        }
+      if (state.readRecoveryMissingFragmentRetransmitTxAtNs > 0 &&
+          state.readRecoveryMissingFragmentFirstVisibleAtNs >=
+              state.readRecoveryMissingFragmentRetransmitTxAtNs)
+        {
+          record.read_recovery_retransmit_to_first_visible_ns =
+              state.readRecoveryMissingFragmentFirstVisibleAtNs -
+              state.readRecoveryMissingFragmentRetransmitTxAtNs;
+        }
+      if (state.readRecoveryMissingFragmentFirstVisibleAtNs > 0 &&
+          state.readRecoveryReassemblyUnblockedAtNs >=
+              state.readRecoveryMissingFragmentFirstVisibleAtNs)
+        {
+          record.read_recovery_first_visible_to_unblocked_ns =
+              state.readRecoveryReassemblyUnblockedAtNs -
+              state.readRecoveryMissingFragmentFirstVisibleAtNs;
+        }
+      if (state.readRecoveryGapDetectedAtNs > 0 &&
+          state.readRecoveryReassemblyUnblockedAtNs >= state.readRecoveryGapDetectedAtNs)
+        {
+          record.read_recovery_detect_to_unblocked_ns =
+              state.readRecoveryReassemblyUnblockedAtNs - state.readRecoveryGapDetectedAtNs;
+        }
+      if (state.readRecoveryMissingFragmentRetransmitTxAtNs > 0 &&
+          state.terminalizedAtNs >= state.readRecoveryMissingFragmentRetransmitTxAtNs)
+        {
+          record.read_recovery_retransmit_to_terminal_ns =
+              state.terminalizedAtNs - state.readRecoveryMissingFragmentRetransmitTxAtNs;
+        }
+      if (state.readRecoveryGapDetectedAtNs > 0 &&
+          state.terminalizedAtNs >= state.readRecoveryGapDetectedAtNs)
+        {
+          record.read_recovery_detect_to_terminal_ns =
+              state.terminalizedAtNs - state.readRecoveryGapDetectedAtNs;
+        }
+    }
+  const bool validReadRecovery =
+      success &&
+      record.opcode == OpType::READ &&
+      state.readRecoveryTracked &&
+      state.readRecoveryGapDetectedAtNs > 0 &&
+      state.readRecoveryGapNackSentAtNs >= state.readRecoveryGapDetectedAtNs &&
+      state.readRecoveryGapNackObservedAtSenderNs >= state.readRecoveryGapNackSentAtNs &&
+      state.readRecoveryMissingFragmentRetransmitTxAtNs >=
+          state.readRecoveryGapNackObservedAtSenderNs &&
+      state.readRecoveryMissingFragmentFirstVisibleAtNs >=
+          state.readRecoveryMissingFragmentRetransmitTxAtNs &&
+      state.readRecoveryReassemblyUnblockedAtNs >=
+          state.readRecoveryMissingFragmentFirstVisibleAtNs;
+  if (validReadRecovery)
+    {
+      record.read_recovery_valid = true;
     }
   m_completionRecords.push_back (record);
   if (m_completionRecords.size () > kCompletionRecordLimit)
@@ -2424,6 +3123,11 @@ SesManager::DispatchRequestPackets (const RequestKey& key)
           return false;
         }
       state.readResponseTargetRegistered = true;
+      state.readResponseTargetRegisteredNs = NowNs ();
+      NotifyReadResponseTargetRegistered (key.jobId,
+                                          key.msgId,
+                                          key.peerFep,
+                                          state.readResponseTargetRegisteredNs);
     }
 
   const uint32_t payloadPerPacket = GetPayloadMtu ();
@@ -3000,6 +3704,10 @@ SesManager::TryDispatchPendingResponse (const RequestKey& key, PendingResponseSt
   const uint32_t payloadPerPacket = GetPayloadMtu ();
   const uint32_t totalLength = state.responseWithData ? state.modifiedLength : responsePacket->GetSize ();
   const uint32_t packetCount = state.packetCount == 0 ? 1u : state.packetCount;
+  if (state.responseFirstDispatchAttemptNs == 0)
+    {
+      state.responseFirstDispatchAttemptNs = NowNs ();
+    }
 
   for (uint32_t i = 0; i < packetCount; ++i)
     {
@@ -3024,7 +3732,8 @@ SesManager::TryDispatchPendingResponse (const RequestKey& key, PendingResponseSt
           fragment->AddPacketTag (SoftUeFragmentTag (i + 1, packetCount));
         }
       fragment->AddPacketTag (SoftUeTransactionTag (1, 1));
-      SoftUeTimingTag timingTag (Simulator::Now ());
+      const uint64_t fragmentSentNs = NowNs ();
+      SoftUeTimingTag timingTag (NanoSeconds (fragmentSentNs));
       if (state.responseWithData && state.responseGeneratedNs > 0)
         {
           timingTag.SetAuxTimestamp (NanoSeconds (state.responseGeneratedNs));
@@ -3033,11 +3742,19 @@ SesManager::TryDispatchPendingResponse (const RequestKey& key, PendingResponseSt
         {
           timingTag.SetAuxTimestamp (NanoSeconds (state.responderReceiveConsumeCompleteNs));
         }
+      if (state.responseFirstDispatchAttemptNs > 0)
+        {
+          timingTag.SetDetailTimestamp (NanoSeconds (state.responseFirstDispatchAttemptNs));
+        }
       fragment->AddPacketTag (timingTag);
       if (!DispatchSemanticPacket (state.metadata, fragment))
         {
           ++m_pendingResponseDispatchFailuresTotal;
           return false;
+        }
+      if (i == 0 && state.responseFirstFragmentSentNs == 0)
+        {
+          state.responseFirstFragmentSentNs = fragmentSentNs;
         }
     }
 
@@ -3314,6 +4031,33 @@ SesManager::TerminalizeRequest (const RequestKey& key, RequestTerminalReason rea
       // request terminalizes before the full response data path retires the receive context.
       m_pdsManager->UnregisterReadResponseTarget (key.jobId, key.msgId, key.peerFep);
       it->second.readResponseTargetRegistered = false;
+    }
+  if (it->second.metadata &&
+      it->second.metadata->op_type == OpType::READ &&
+      it->second.readRecoveryTracked &&
+      reason != RequestTerminalReason::RC_OK_RESPONSE)
+    {
+      RecordDiagnosticEvent (
+          "ReadGapTerminalFailure",
+          "job=" + std::to_string (key.jobId) +
+              " msg=" + std::to_string (key.msgId) +
+              " peer=" + std::to_string (key.peerFep) +
+              " reason=" + std::to_string (static_cast<uint32_t> (reason)) +
+              " gap_detected_at_ns=" + std::to_string (it->second.readRecoveryGapDetectedAtNs) +
+              " gap_nack_sent_at_ns=" + std::to_string (it->second.readRecoveryGapNackSentAtNs) +
+              " gap_nack_observed_at_sender_ns=" +
+              std::to_string (it->second.readRecoveryGapNackObservedAtSenderNs) +
+              " retransmit_tx_at_ns=" +
+              std::to_string (it->second.readRecoveryMissingFragmentRetransmitTxAtNs) +
+              " first_visible_at_ns=" +
+              std::to_string (it->second.readRecoveryMissingFragmentFirstVisibleAtNs) +
+              " reassembly_unblocked_at_ns=" +
+              std::to_string (it->second.readRecoveryReassemblyUnblockedAtNs) +
+              " gap_nack_sent_count=" + std::to_string (it->second.readRecoveryGapNackSentCount) +
+              " gap_nack_observed_count=" +
+              std::to_string (it->second.readRecoveryGapNackObservedAtSenderCount) +
+              " retransmit_count=" +
+              std::to_string (it->second.readRecoveryMissingFragmentRetransmitCount));
     }
   RecordCompletion (key, it->second);
   it->second.countedInSemanticStats = true;

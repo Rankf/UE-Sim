@@ -658,7 +658,7 @@ uint32_t
 SoftUeTimingTag::GetSerializedSize (void) const
 {
     NS_LOG_FUNCTION (this);
-    return 2 * sizeof (int64_t); // Two timestamps
+    return 3 * sizeof (int64_t); // Three timestamps
 }
 
 void
@@ -667,6 +667,7 @@ SoftUeTimingTag::Serialize (TagBuffer i) const
     NS_LOG_FUNCTION (this << &i);
     i.WriteU64 ((int64_t)m_timestamp.GetNanoSeconds ());
     i.WriteU64 ((int64_t)m_expectedDeliveryTime.GetNanoSeconds ());
+    i.WriteU64 ((int64_t)m_detailTimestamp.GetNanoSeconds ());
 }
 
 void
@@ -675,6 +676,7 @@ SoftUeTimingTag::Deserialize (TagBuffer i)
     NS_LOG_FUNCTION (this << &i);
     m_timestamp = NanoSeconds (i.ReadU64 ());
     m_expectedDeliveryTime = NanoSeconds (i.ReadU64 ());
+    m_detailTimestamp = NanoSeconds (i.ReadU64 ());
 }
 
 void
@@ -682,17 +684,18 @@ SoftUeTimingTag::Print (std::ostream &os) const
 {
     NS_LOG_FUNCTION (this << &os);
     os << "SoftUeTimingTag [timestamp=" << m_timestamp.GetNanoSeconds ()
-       << "ns, expected=" << m_expectedDeliveryTime.GetNanoSeconds () << "ns]";
+       << "ns, expected=" << m_expectedDeliveryTime.GetNanoSeconds ()
+       << "ns, detail=" << m_detailTimestamp.GetNanoSeconds () << "ns]";
 }
 
 SoftUeTimingTag::SoftUeTimingTag ()
-    : m_timestamp (Simulator::Now ()), m_expectedDeliveryTime (Time::Max ())
+    : m_timestamp (Simulator::Now ()), m_expectedDeliveryTime (Time::Max ()), m_detailTimestamp (Time::Max ())
 {
     NS_LOG_FUNCTION (this);
 }
 
 SoftUeTimingTag::SoftUeTimingTag (Time timestamp)
-    : m_timestamp (timestamp), m_expectedDeliveryTime (Time::Max ())
+    : m_timestamp (timestamp), m_expectedDeliveryTime (Time::Max ()), m_detailTimestamp (Time::Max ())
 {
     NS_LOG_FUNCTION (this << timestamp.GetNanoSeconds ());
 }
@@ -737,6 +740,110 @@ SoftUeTimingTag::SetAuxTimestamp (Time time)
 {
     NS_LOG_FUNCTION (this << time.GetNanoSeconds ());
     m_expectedDeliveryTime = time;
+}
+
+Time
+SoftUeTimingTag::GetDetailTimestamp (void) const
+{
+    NS_LOG_FUNCTION (this);
+    return m_detailTimestamp;
+}
+
+void
+SoftUeTimingTag::SetDetailTimestamp (Time time)
+{
+    NS_LOG_FUNCTION (this << time.GetNanoSeconds ());
+    m_detailTimestamp = time;
+}
+
+// ============================================================================
+// SoftUeRecoveryTag Implementation
+// ============================================================================
+
+NS_OBJECT_ENSURE_REGISTERED (SoftUeRecoveryTag);
+
+TypeId
+SoftUeRecoveryTag::GetTypeId (void)
+{
+    NS_LOG_FUNCTION_NOARGS ();
+    static TypeId tid = TypeId ("ns3::SoftUeRecoveryTag")
+        .SetParent<Tag> ()
+        .SetGroupName ("SoftUe")
+        .AddConstructor<SoftUeRecoveryTag> ();
+    return tid;
+}
+
+TypeId
+SoftUeRecoveryTag::GetInstanceTypeId (void) const
+{
+    NS_LOG_FUNCTION (this);
+    return GetTypeId ();
+}
+
+uint32_t
+SoftUeRecoveryTag::GetSerializedSize (void) const
+{
+    NS_LOG_FUNCTION (this);
+    return 2 * sizeof (int64_t);
+}
+
+void
+SoftUeRecoveryTag::Serialize (TagBuffer i) const
+{
+    NS_LOG_FUNCTION (this << &i);
+    i.WriteU64 ((int64_t)m_gapNackSentTime.GetNanoSeconds ());
+    i.WriteU64 ((int64_t)m_retransmitTxTime.GetNanoSeconds ());
+}
+
+void
+SoftUeRecoveryTag::Deserialize (TagBuffer i)
+{
+    NS_LOG_FUNCTION (this << &i);
+    m_gapNackSentTime = NanoSeconds (i.ReadU64 ());
+    m_retransmitTxTime = NanoSeconds (i.ReadU64 ());
+}
+
+void
+SoftUeRecoveryTag::Print (std::ostream &os) const
+{
+    NS_LOG_FUNCTION (this << &os);
+    os << "SoftUeRecoveryTag [gapNackSent=" << m_gapNackSentTime.GetNanoSeconds ()
+       << "ns, retransmitTx=" << m_retransmitTxTime.GetNanoSeconds () << "ns]";
+}
+
+SoftUeRecoveryTag::SoftUeRecoveryTag ()
+    : m_gapNackSentTime (Time::Max ()),
+      m_retransmitTxTime (Time::Max ())
+{
+    NS_LOG_FUNCTION (this);
+}
+
+Time
+SoftUeRecoveryTag::GetGapNackSentTime (void) const
+{
+    NS_LOG_FUNCTION (this);
+    return m_gapNackSentTime;
+}
+
+void
+SoftUeRecoveryTag::SetGapNackSentTime (Time time)
+{
+    NS_LOG_FUNCTION (this << time.GetNanoSeconds ());
+    m_gapNackSentTime = time;
+}
+
+Time
+SoftUeRecoveryTag::GetRetransmitTxTime (void) const
+{
+    NS_LOG_FUNCTION (this);
+    return m_retransmitTxTime;
+}
+
+void
+SoftUeRecoveryTag::SetRetransmitTxTime (Time time)
+{
+    NS_LOG_FUNCTION (this << time.GetNanoSeconds ());
+    m_retransmitTxTime = time;
 }
 
 // ============================================================================

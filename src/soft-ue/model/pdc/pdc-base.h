@@ -117,8 +117,13 @@ struct RxMessageContext
     bool response_sent{false};
     bool arrival_reserved{false};
     bool unexpected_reserved{false};
+    bool read_track_reserved{false};
     bool retired{false};
     int64_t retired_at_ms{0};
+    bool recovery_gap_tracked{false};
+    bool recovery_visible_recorded{false};
+    bool recovery_gap_completed{false};
+    uint32_t recovery_missing_chunk_index{0};
 };
 
 struct RxMessageProbe
