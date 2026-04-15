@@ -471,6 +471,11 @@ private:
         uint64_t readResponseFirstDispatchAttemptNs{0};
         uint64_t readResponseFirstFragmentSentNs{0};
         uint64_t readResponseFirstVisibleNs{0};
+        uint64_t readResponseTpdcFirstTransmitNs{0};
+        bool readResponseTpdcQueuedForSendWindow{false};
+        uint64_t readResponseChannelBaselineReceiveNs{0};
+        uint64_t readResponseChannelHoldReleaseNs{0};
+        uint64_t readResponseChannelReceiveNs{0};
         uint64_t readResponseReassemblyCompleteNs{0};
         uint64_t readResponseTargetRegisteredNs{0};
         uint64_t readResponseFirstPacketNoContextNs{0};

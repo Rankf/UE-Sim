@@ -259,6 +259,16 @@ SesManager::ProcessSendRequest (Ptr<ExtendedOperationMetadata> metadata, Ptr<Pac
   const uint64_t preservedReadResponseFirstFragmentSentNs =
       requestState.readResponseFirstFragmentSentNs;
   const uint64_t preservedReadResponseFirstVisibleNs = requestState.readResponseFirstVisibleNs;
+  const uint64_t preservedReadResponseTpdcFirstTransmitNs =
+      requestState.readResponseTpdcFirstTransmitNs;
+  const bool preservedReadResponseTpdcQueuedForSendWindow =
+      requestState.readResponseTpdcQueuedForSendWindow;
+  const uint64_t preservedReadResponseChannelBaselineReceiveNs =
+      requestState.readResponseChannelBaselineReceiveNs;
+  const uint64_t preservedReadResponseChannelHoldReleaseNs =
+      requestState.readResponseChannelHoldReleaseNs;
+  const uint64_t preservedReadResponseChannelReceiveNs =
+      requestState.readResponseChannelReceiveNs;
   const uint64_t preservedReadResponseReassemblyCompleteNs =
       requestState.readResponseReassemblyCompleteNs;
   const uint64_t preservedReadResponseTargetRegisteredNs =
@@ -348,6 +358,16 @@ SesManager::ProcessSendRequest (Ptr<ExtendedOperationMetadata> metadata, Ptr<Pac
       metadata->is_retry ? preservedReadResponseFirstFragmentSentNs : 0;
   requestState.readResponseFirstVisibleNs =
       metadata->is_retry ? preservedReadResponseFirstVisibleNs : 0;
+  requestState.readResponseTpdcFirstTransmitNs =
+      metadata->is_retry ? preservedReadResponseTpdcFirstTransmitNs : 0;
+  requestState.readResponseTpdcQueuedForSendWindow =
+      metadata->is_retry ? preservedReadResponseTpdcQueuedForSendWindow : false;
+  requestState.readResponseChannelBaselineReceiveNs =
+      metadata->is_retry ? preservedReadResponseChannelBaselineReceiveNs : 0;
+  requestState.readResponseChannelHoldReleaseNs =
+      metadata->is_retry ? preservedReadResponseChannelHoldReleaseNs : 0;
+  requestState.readResponseChannelReceiveNs =
+      metadata->is_retry ? preservedReadResponseChannelReceiveNs : 0;
   requestState.readResponseReassemblyCompleteNs =
       metadata->is_retry ? preservedReadResponseReassemblyCompleteNs : 0;
   requestState.readResponseTargetRegisteredNs =
@@ -637,6 +657,63 @@ SesManager::ProcessReceiveResponse (const PdcSesResponse& response)
                       state.readResponseGeneratedNs = auxNs;
                     }
                 }
+            }
+          SoftUeChannelTimingTag channelTimingTag;
+          if (response.packet && response.packet->PeekPacketTag (channelTimingTag))
+            {
+              const Time baselineTimestamp = channelTimingTag.GetBaselineReceiveTime ();
+              if (baselineTimestamp != Time::Max () && baselineTimestamp.GetNanoSeconds () > 0)
+                {
+                  const uint64_t baselineNs =
+                      static_cast<uint64_t> (baselineTimestamp.GetNanoSeconds ());
+                  if (state.readResponseChannelBaselineReceiveNs == 0 ||
+                      baselineNs < state.readResponseChannelBaselineReceiveNs)
+                    {
+                      state.readResponseChannelBaselineReceiveNs = baselineNs;
+                    }
+                }
+              const Time holdReleaseTimestamp = channelTimingTag.GetHoldReleaseTime ();
+              if (holdReleaseTimestamp != Time::Max () && holdReleaseTimestamp.GetNanoSeconds () > 0)
+                {
+                  const uint64_t holdReleaseNs =
+                      static_cast<uint64_t> (holdReleaseTimestamp.GetNanoSeconds ());
+                  if (state.readResponseChannelHoldReleaseNs == 0 ||
+                      holdReleaseNs < state.readResponseChannelHoldReleaseNs)
+                    {
+                      state.readResponseChannelHoldReleaseNs = holdReleaseNs;
+                    }
+                }
+              const Time channelReceiveTimestamp = channelTimingTag.GetChannelReceiveTime ();
+              if (channelReceiveTimestamp != Time::Max () && channelReceiveTimestamp.GetNanoSeconds () > 0)
+                {
+                  const uint64_t channelReceiveNs =
+                      static_cast<uint64_t> (channelReceiveTimestamp.GetNanoSeconds ());
+                  if (state.readResponseChannelReceiveNs == 0 ||
+                      channelReceiveNs < state.readResponseChannelReceiveNs)
+                    {
+                      state.readResponseChannelReceiveNs = channelReceiveNs;
+                    }
+                }
+            }
+          SoftUeTransportTimingTag transportTimingTag;
+          if (response.packet && response.packet->PeekPacketTag (transportTimingTag))
+            {
+              const Time transportTransmitTimestamp =
+                  transportTimingTag.GetTransportTransmitTime ();
+              if (transportTransmitTimestamp != Time::Max () &&
+                  transportTransmitTimestamp.GetNanoSeconds () > 0)
+                {
+                  const uint64_t transportTransmitNs =
+                      static_cast<uint64_t> (transportTransmitTimestamp.GetNanoSeconds ());
+                  if (state.readResponseTpdcFirstTransmitNs == 0 ||
+                      transportTransmitNs < state.readResponseTpdcFirstTransmitNs)
+                    {
+                      state.readResponseTpdcFirstTransmitNs = transportTransmitNs;
+                    }
+                }
+              state.readResponseTpdcQueuedForSendWindow =
+                  state.readResponseTpdcQueuedForSendWindow ||
+                  transportTimingTag.GetQueuedForSendWindow ();
             }
           if (!m_pdsManager)
             {
@@ -2456,6 +2533,43 @@ SesManager::RecordCompletion (const RequestKey& key, const RequestLifecycleState
           state.readResponseFirstFragmentSentNs - state.readResponseFirstDispatchAttemptNs;
       record.read_stage_network_return_visibility_ns =
           state.readResponseFirstVisibleNs - state.readResponseFirstFragmentSentNs;
+      if (state.readResponseTpdcFirstTransmitNs >= state.readResponseFirstFragmentSentNs)
+        {
+          record.read_stage_tpdc_transport_send_serialization_ns =
+              state.readResponseTpdcFirstTransmitNs - state.readResponseFirstFragmentSentNs;
+        }
+      record.read_stage_tpdc_send_window_queued =
+          state.readResponseTpdcQueuedForSendWindow;
+      if (state.readResponseChannelBaselineReceiveNs >= state.readResponseFirstFragmentSentNs &&
+          state.readResponseChannelHoldReleaseNs >= state.readResponseChannelBaselineReceiveNs &&
+          state.readResponseChannelReceiveNs >= state.readResponseChannelHoldReleaseNs &&
+          state.readResponseFirstVisibleNs >= state.readResponseChannelReceiveNs)
+        {
+          if (state.readResponseTpdcFirstTransmitNs >= state.readResponseFirstFragmentSentNs &&
+              state.readResponseChannelBaselineReceiveNs >= state.readResponseTpdcFirstTransmitNs)
+            {
+              record.read_stage_return_path_data_fragment_delay_ns =
+                  (state.readResponseChannelBaselineReceiveNs -
+                   state.readResponseTpdcFirstTransmitNs) +
+                  (state.readResponseChannelReceiveNs -
+                   state.readResponseChannelHoldReleaseNs);
+            }
+          else
+            {
+              record.read_stage_return_path_data_fragment_delay_ns =
+                  (state.readResponseChannelBaselineReceiveNs -
+                   state.readResponseFirstFragmentSentNs) +
+                  (state.readResponseChannelReceiveNs -
+                   state.readResponseChannelHoldReleaseNs);
+            }
+          record.read_stage_network_queue_serialization_ns =
+              record.read_stage_tpdc_transport_send_serialization_ns +
+              record.read_stage_return_path_data_fragment_delay_ns;
+          record.read_stage_network_reorder_hold_ns =
+              state.readResponseChannelHoldReleaseNs - state.readResponseChannelBaselineReceiveNs;
+          record.read_stage_requester_visibility_ns =
+              state.readResponseFirstVisibleNs - state.readResponseChannelReceiveNs;
+        }
       record.read_stage_first_response_visible_ns =
           state.readResponseFirstVisibleNs - state.readResponseGeneratedNs;
       record.read_stage_reassembly_complete_ns =

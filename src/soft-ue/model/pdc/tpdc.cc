@@ -13,6 +13,39 @@
 
 namespace ns3 {
 
+namespace {
+
+void
+SetTransportAcceptTimestamp (Ptr<Packet> packet, Time acceptTime, bool queuedForSendWindow)
+{
+  if (!packet)
+    {
+      return;
+    }
+  SoftUeTransportTimingTag timingTag;
+  packet->PeekPacketTag (timingTag);
+  packet->RemovePacketTag (timingTag);
+  timingTag.SetTransportAcceptTime (acceptTime);
+  timingTag.SetQueuedForSendWindow (queuedForSendWindow);
+  packet->AddPacketTag (timingTag);
+}
+
+void
+SetTransportTransmitTimestamp (Ptr<Packet> packet, Time transmitTime)
+{
+  if (!packet)
+    {
+      return;
+    }
+  SoftUeTransportTimingTag timingTag;
+  packet->PeekPacketTag (timingTag);
+  packet->RemovePacketTag (timingTag);
+  timingTag.SetTransportTransmitTime (transmitTime);
+  packet->AddPacketTag (timingTag);
+}
+
+} // namespace
+
 NS_LOG_COMPONENT_DEFINE ("Tpdc");
 NS_OBJECT_ENSURE_REGISTERED (Tpdc);
 
@@ -80,7 +113,7 @@ Tpdc::DoDispose (void)
   ClearReceiveBuffer ();
   while (!m_sendQueue.empty ())
     {
-      m_sendQueue.pop ();
+      m_sendQueue.pop_front ();
     }
   while (!m_ackQueue.empty ())
     {
@@ -542,12 +575,25 @@ Tpdc::BufferPacketForSending (Ptr<Packet> packet, bool som, bool eom)
 
   if (!IsInSendWindow (m_nextSendSequence))
     {
-      m_sendQueue.push (BufferedPacket (packet->Copy (), som, eom, 0));
+      Ptr<Packet> queuedPacket = packet->Copy ();
+      SetTransportAcceptTimestamp (queuedPacket, Simulator::Now (), true);
+      BufferedPacket buffered (queuedPacket, som, eom, 0);
+      const bool isReadResponse = IsReadResponsePacket (queuedPacket);
+      if (isReadResponse && m_tpdcConfig.readResponseQueuePriority)
+        {
+          m_sendQueue.push_front (buffered);
+        }
+      else
+        {
+          m_sendQueue.push_back (buffered);
+        }
       return true;
     }
 
   const uint32_t seq = GenerateSequenceNumber ();
-  BufferedPacket buffered (packet->Copy (), som, eom, seq);
+  Ptr<Packet> acceptedPacket = packet->Copy ();
+  SetTransportAcceptTimestamp (acceptedPacket, Simulator::Now (), false);
+  BufferedPacket buffered (acceptedPacket, som, eom, seq);
   m_sendBuffer[seq] = buffered;
 
   if (!TransmitPacket (m_sendBuffer[seq]))
@@ -559,6 +605,17 @@ Tpdc::BufferPacketForSending (Ptr<Packet> packet, bool som, bool eom)
   ArmTimeout (seq);
   UpdateStatistics ();
   return true;
+}
+
+bool
+Tpdc::IsReadResponsePacket (Ptr<Packet> packet) const
+{
+  SoftUeMetadataTag metadataTag;
+  return packet &&
+         packet->PeekPacketTag (metadataTag) &&
+         metadataTag.GetOperationType () == OpType::READ &&
+         metadataTag.GetResponseOpCode () ==
+             static_cast<uint8_t> (ResponseOpCode::UET_RESPONSE_W_DATA);
 }
 
 bool
@@ -663,12 +720,25 @@ Tpdc::ProcessSendQueue (void)
 {
   while (!m_sendQueue.empty () && IsInSendWindow (m_nextSendSequence))
     {
-      BufferedPacket buffered = m_sendQueue.front ();
-      m_sendQueue.pop ();
+      std::deque<BufferedPacket>::iterator selected = m_sendQueue.begin ();
+      if (m_tpdcConfig.readResponseAggressiveDrain)
+        {
+          for (auto it = m_sendQueue.begin (); it != m_sendQueue.end (); ++it)
+            {
+              if (IsReadResponsePacket (it->packet))
+                {
+                  selected = it;
+                  break;
+                }
+            }
+        }
+      BufferedPacket buffered = *selected;
+      m_sendQueue.erase (selected);
 
       const uint32_t seq = GenerateSequenceNumber ();
       buffered.sequenceNumber = seq;
       buffered.timestamp = Simulator::Now ();
+      SetTransportAcceptTimestamp (buffered.packet, buffered.timestamp, true);
       m_sendBuffer[seq] = buffered;
 
       if (TransmitPacket (m_sendBuffer[seq]))
@@ -766,6 +836,8 @@ Tpdc::TransmitPacket (const BufferedPacket& bufferedPacket)
     {
       return false;
     }
+
+  SetTransportTransmitTimestamp (packet, Simulator::Now ());
 
   if (bufferedPacket.recoveryGapNackSentTime != Time::Max () ||
       bufferedPacket.recoveryRetransmitTxTime != Time::Max ())

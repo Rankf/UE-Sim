@@ -466,6 +466,60 @@ private:
     Time m_detailTimestamp;        ///< Additional timing detail
 };
 
+class SoftUeChannelTimingTag : public Tag
+{
+public:
+    static TypeId GetTypeId (void);
+    virtual TypeId GetInstanceTypeId (void) const override;
+    virtual uint32_t GetSerializedSize (void) const override;
+    virtual void Serialize (TagBuffer i) const override;
+    virtual void Deserialize (TagBuffer i) override;
+    virtual void Print (std::ostream &os) const override;
+
+    SoftUeChannelTimingTag ();
+
+    Time GetBaselineReceiveTime (void) const;
+    void SetBaselineReceiveTime (Time time);
+
+    Time GetHoldReleaseTime (void) const;
+    void SetHoldReleaseTime (Time time);
+
+    Time GetChannelReceiveTime (void) const;
+    void SetChannelReceiveTime (Time time);
+
+private:
+    Time m_baselineReceiveTime;
+    Time m_holdReleaseTime;
+    Time m_channelReceiveTime;
+};
+
+class SoftUeTransportTimingTag : public Tag
+{
+public:
+    static TypeId GetTypeId (void);
+    virtual TypeId GetInstanceTypeId (void) const override;
+    virtual uint32_t GetSerializedSize (void) const override;
+    virtual void Serialize (TagBuffer i) const override;
+    virtual void Deserialize (TagBuffer i) override;
+    virtual void Print (std::ostream &os) const override;
+
+    SoftUeTransportTimingTag ();
+
+    Time GetTransportAcceptTime (void) const;
+    void SetTransportAcceptTime (Time time);
+
+    Time GetTransportTransmitTime (void) const;
+    void SetTransportTransmitTime (Time time);
+
+    bool GetQueuedForSendWindow (void) const;
+    void SetQueuedForSendWindow (bool queued);
+
+private:
+    Time m_transportAcceptTime;
+    Time m_transportTransmitTime;
+    bool m_queuedForSendWindow;
+};
+
 class SoftUeRecoveryTag : public Tag
 {
 public:

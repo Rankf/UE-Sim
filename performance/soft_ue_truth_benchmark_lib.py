@@ -330,6 +330,23 @@ RUN_SUMMARY_FIELDS = [
     "read_stage_network_return_visibility_p50_ns",
     "read_stage_network_return_visibility_p95_ns",
     "read_stage_network_return_visibility_p99_ns",
+    "read_stage_network_queue_serialization_p50_ns",
+    "read_stage_network_queue_serialization_p95_ns",
+    "read_stage_network_queue_serialization_p99_ns",
+    "read_stage_tpdc_transport_send_serialization_p50_ns",
+    "read_stage_tpdc_transport_send_serialization_p95_ns",
+    "read_stage_tpdc_transport_send_serialization_p99_ns",
+    "read_stage_return_path_data_fragment_delay_p50_ns",
+    "read_stage_return_path_data_fragment_delay_p95_ns",
+    "read_stage_return_path_data_fragment_delay_p99_ns",
+    "read_stage_tpdc_send_window_queued_count",
+    "read_stage_tpdc_send_window_queued_pct",
+    "read_stage_network_reorder_hold_p50_ns",
+    "read_stage_network_reorder_hold_p95_ns",
+    "read_stage_network_reorder_hold_p99_ns",
+    "read_stage_requester_visibility_p50_ns",
+    "read_stage_requester_visibility_p95_ns",
+    "read_stage_requester_visibility_p99_ns",
     "read_stage_first_response_visible_p50_ns",
     "read_stage_first_response_visible_p95_ns",
     "read_stage_first_response_visible_p99_ns",
@@ -346,6 +363,11 @@ RUN_SUMMARY_FIELDS = [
     "read_stage_pending_response_queue_dispatch_mean_ns",
     "read_stage_response_first_packet_tx_mean_ns",
     "read_stage_network_return_visibility_mean_ns",
+    "read_stage_network_queue_serialization_mean_ns",
+    "read_stage_tpdc_transport_send_serialization_mean_ns",
+    "read_stage_return_path_data_fragment_delay_mean_ns",
+    "read_stage_network_reorder_hold_mean_ns",
+    "read_stage_requester_visibility_mean_ns",
     "read_stage_first_response_visible_mean_ns",
     "read_stage_reassembly_complete_mean_ns",
     "read_stage_terminal_mean_ns",
@@ -1228,6 +1250,20 @@ def build_read_stage_latency(rows: list[dict[str, str]]) -> list[dict[str, Any]]
                 "network_return_visibility_ns": to_int(
                     row.get("ReadStageNetworkReturnVisibilityNs")
                 ),
+                "network_queue_serialization_ns": to_int(
+                    row.get("ReadStageNetworkQueueSerializationNs")
+                ),
+                "tpdc_transport_send_serialization_ns": to_int(
+                    row.get("ReadStageTpdcTransportSendSerializationNs")
+                ),
+                "return_path_data_fragment_delay_ns": to_int(
+                    row.get("ReadStageReturnPathDataFragmentDelayNs")
+                ),
+                "tpdc_send_window_queued": to_int(
+                    row.get("ReadStageTpdcSendWindowQueued")
+                ),
+                "network_reorder_hold_ns": to_int(row.get("ReadStageNetworkReorderHoldNs")),
+                "requester_visibility_ns": to_int(row.get("ReadStageRequesterVisibilityNs")),
                 "first_response_visible_ns": to_int(row.get("ReadStageFirstResponseVisibleNs")),
                 "reassembly_complete_ns": to_int(row.get("ReadStageReassemblyCompleteNs")),
                 "terminal_ns": to_int(row.get("ReadStageTerminalNs")),
@@ -1514,6 +1550,14 @@ def aggregate_read_stage_rows(rows: list[dict[str, str]]) -> dict[str, Any]:
     pending_dispatch_values = [float(item["pending_response_queue_dispatch_ns"]) for item in stage_rows]
     first_packet_tx_values = [float(item["response_first_packet_tx_ns"]) for item in stage_rows]
     network_visibility_values = [float(item["network_return_visibility_ns"]) for item in stage_rows]
+    network_queue_values = [float(item["network_queue_serialization_ns"]) for item in stage_rows]
+    tpdc_send_values = [float(item["tpdc_transport_send_serialization_ns"]) for item in stage_rows]
+    return_path_delay_values = [float(item["return_path_data_fragment_delay_ns"]) for item in stage_rows]
+    tpdc_send_window_queued_count = sum(
+        1 for item in stage_rows if int(item["tpdc_send_window_queued"]) != 0
+    )
+    network_reorder_values = [float(item["network_reorder_hold_ns"]) for item in stage_rows]
+    requester_visibility_values = [float(item["requester_visibility_ns"]) for item in stage_rows]
     first_visible_values = [float(item["first_response_visible_ns"]) for item in stage_rows]
     reassembly_values = [float(item["reassembly_complete_ns"]) for item in stage_rows]
     terminal_values = [float(item["terminal_ns"]) for item in stage_rows]
@@ -1532,6 +1576,45 @@ def aggregate_read_stage_rows(rows: list[dict[str, str]]) -> dict[str, Any]:
         "read_stage_network_return_visibility_p50_ns": percentile_or_zero(network_visibility_values, 0.50),
         "read_stage_network_return_visibility_p95_ns": percentile_or_zero(network_visibility_values, 0.95),
         "read_stage_network_return_visibility_p99_ns": percentile_or_zero(network_visibility_values, 0.99),
+        "read_stage_network_queue_serialization_p50_ns": percentile_or_zero(network_queue_values, 0.50),
+        "read_stage_network_queue_serialization_p95_ns": percentile_or_zero(network_queue_values, 0.95),
+        "read_stage_network_queue_serialization_p99_ns": percentile_or_zero(network_queue_values, 0.99),
+        "read_stage_tpdc_transport_send_serialization_p50_ns": percentile_or_zero(
+            tpdc_send_values, 0.50
+        ),
+        "read_stage_tpdc_transport_send_serialization_p95_ns": percentile_or_zero(
+            tpdc_send_values, 0.95
+        ),
+        "read_stage_tpdc_transport_send_serialization_p99_ns": percentile_or_zero(
+            tpdc_send_values, 0.99
+        ),
+        "read_stage_return_path_data_fragment_delay_p50_ns": percentile_or_zero(
+            return_path_delay_values, 0.50
+        ),
+        "read_stage_return_path_data_fragment_delay_p95_ns": percentile_or_zero(
+            return_path_delay_values, 0.95
+        ),
+        "read_stage_return_path_data_fragment_delay_p99_ns": percentile_or_zero(
+            return_path_delay_values, 0.99
+        ),
+        "read_stage_tpdc_send_window_queued_count": tpdc_send_window_queued_count,
+        "read_stage_tpdc_send_window_queued_pct": round(
+            tpdc_send_window_queued_count * 100.0 / len(stage_rows), 6
+        )
+        if stage_rows
+        else 0.0,
+        "read_stage_network_reorder_hold_p50_ns": percentile_or_zero(network_reorder_values, 0.50),
+        "read_stage_network_reorder_hold_p95_ns": percentile_or_zero(network_reorder_values, 0.95),
+        "read_stage_network_reorder_hold_p99_ns": percentile_or_zero(network_reorder_values, 0.99),
+        "read_stage_requester_visibility_p50_ns": percentile_or_zero(
+            requester_visibility_values, 0.50
+        ),
+        "read_stage_requester_visibility_p95_ns": percentile_or_zero(
+            requester_visibility_values, 0.95
+        ),
+        "read_stage_requester_visibility_p99_ns": percentile_or_zero(
+            requester_visibility_values, 0.99
+        ),
         "read_stage_first_response_visible_p50_ns": percentile_or_zero(first_visible_values, 0.50),
         "read_stage_first_response_visible_p95_ns": percentile_or_zero(first_visible_values, 0.95),
         "read_stage_first_response_visible_p99_ns": percentile_or_zero(first_visible_values, 0.99),
@@ -1555,6 +1638,25 @@ def aggregate_read_stage_rows(rows: list[dict[str, str]]) -> dict[str, Any]:
         else 0.0,
         "read_stage_network_return_visibility_mean_ns": round(statistics.fmean(network_visibility_values), 6)
         if network_visibility_values
+        else 0.0,
+        "read_stage_network_queue_serialization_mean_ns": round(statistics.fmean(network_queue_values), 6)
+        if network_queue_values
+        else 0.0,
+        "read_stage_tpdc_transport_send_serialization_mean_ns": round(
+            statistics.fmean(tpdc_send_values), 6
+        )
+        if tpdc_send_values
+        else 0.0,
+        "read_stage_return_path_data_fragment_delay_mean_ns": round(
+            statistics.fmean(return_path_delay_values), 6
+        )
+        if return_path_delay_values
+        else 0.0,
+        "read_stage_network_reorder_hold_mean_ns": round(statistics.fmean(network_reorder_values), 6)
+        if network_reorder_values
+        else 0.0,
+        "read_stage_requester_visibility_mean_ns": round(statistics.fmean(requester_visibility_values), 6)
+        if requester_visibility_values
         else 0.0,
         "read_stage_first_response_visible_mean_ns": round(statistics.fmean(first_visible_values), 6)
         if first_visible_values

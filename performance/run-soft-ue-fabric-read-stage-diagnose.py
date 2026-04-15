@@ -117,6 +117,42 @@ def recovery_mean_map(row: dict[str, Any]) -> dict[str, float]:
     }
 
 
+def network_visibility_mean_map(row: dict[str, Any]) -> dict[str, float]:
+    return {
+        "return-queue-serialization": float(
+            row.get("read_stage_network_queue_serialization_mean_ns", 0.0)
+        ),
+        "mixed-reorder-hold": float(row.get("read_stage_network_reorder_hold_mean_ns", 0.0)),
+        "requester-visibility": float(row.get("read_stage_requester_visibility_mean_ns", 0.0)),
+    }
+
+
+def classify_dominant_network_visibility_stage(row: dict[str, Any]) -> str:
+    means = network_visibility_mean_map(row)
+    dominant = max(means.items(), key=lambda item: item[1])[0]
+    return f"{dominant}-dominant"
+
+
+def return_queue_mean_map(row: dict[str, Any]) -> dict[str, float]:
+    return {
+        "responder-egress-queue": float(
+            row.get("read_stage_pending_response_queue_dispatch_mean_ns", 0.0)
+        ),
+        "tpdc-transport-send-serialization": float(
+            row.get("read_stage_tpdc_transport_send_serialization_mean_ns", 0.0)
+        ),
+        "return-path-fragment-delay": float(
+            row.get("read_stage_return_path_data_fragment_delay_mean_ns", 0.0)
+        ),
+    }
+
+
+def classify_dominant_return_queue_stage(row: dict[str, Any]) -> str:
+    means = return_queue_mean_map(row)
+    dominant = max(means.items(), key=lambda item: item[1])[0]
+    return f"{dominant}-dominant"
+
+
 def classify_dominant_recovery_stage(row: dict[str, Any]) -> str:
     if int(row.get("read_recovery_sample_count", 0)) <= 0:
         return "no-recovery-samples"
@@ -236,6 +272,99 @@ def render_report(report_path: Path, metadata: dict[str, Any], rows: list[dict[s
                 arrival_hold=float(row.get("read_pre_arrival_hold_to_release_p95_ns", 0.0))
                 / 1000.0,
                 dominant=str(row.get("read_pre_failure_dominant_stage", "")) or "no-pre-failure",
+            )
+        )
+    lines.extend(
+        [
+            "",
+            "## Network Visibility Breakdown",
+            "",
+            "| case | queue_serialization_p95_us | reorder_hold_p95_us | requester_visibility_p95_us | queue_serialization_share_pct | reorder_hold_share_pct | requester_visibility_share_pct | dominant_network_visibility_stage |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        ]
+    )
+    for row in rows:
+        queue_mean = float(row.get("read_stage_network_queue_serialization_mean_ns", 0.0))
+        reorder_mean = float(row.get("read_stage_network_reorder_hold_mean_ns", 0.0))
+        requester_mean = float(row.get("read_stage_requester_visibility_mean_ns", 0.0))
+        network_total = queue_mean + reorder_mean + requester_mean
+        if network_total <= 0.0:
+            queue_share = 0.0
+            reorder_share = 0.0
+            requester_share = 0.0
+        else:
+            queue_share = queue_mean * 100.0 / network_total
+            reorder_share = reorder_mean * 100.0 / network_total
+            requester_share = requester_mean * 100.0 / network_total
+        lines.append(
+            "| {case} | {queue_p95:.3f} | {reorder_p95:.3f} | {requester_p95:.3f} | {queue_share:.2f} | {reorder_share:.2f} | {requester_share:.2f} | {dominant} |".format(
+                case=str(row["case_name"]),
+                queue_p95=float(
+                    row.get("read_stage_network_queue_serialization_p95_ns", 0.0)
+                )
+                / 1000.0,
+                reorder_p95=float(row.get("read_stage_network_reorder_hold_p95_ns", 0.0))
+                / 1000.0,
+                requester_p95=float(
+                    row.get("read_stage_requester_visibility_p95_ns", 0.0)
+                )
+                / 1000.0,
+                queue_share=queue_share,
+                reorder_share=reorder_share,
+                requester_share=requester_share,
+                dominant=str(row.get("dominant_network_visibility_stage", "")),
+            )
+        )
+    lines.extend(
+        [
+            "",
+            "## Return Queue Breakdown",
+            "",
+            "| case | responder_egress_queue_p95_us | tpdc_transport_send_p95_us | return_path_fragment_delay_p95_us | tpdc_send_window_queued_pct | responder_egress_share_pct | tpdc_transport_send_share_pct | return_path_fragment_share_pct | dominant_return_queue_stage |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        ]
+    )
+    for row in rows:
+        responder_mean = float(
+            row.get("read_stage_pending_response_queue_dispatch_mean_ns", 0.0)
+        )
+        tpdc_mean = float(
+            row.get("read_stage_tpdc_transport_send_serialization_mean_ns", 0.0)
+        )
+        return_path_mean = float(
+            row.get("read_stage_return_path_data_fragment_delay_mean_ns", 0.0)
+        )
+        total = responder_mean + tpdc_mean + return_path_mean
+        if total <= 0.0:
+            responder_share = 0.0
+            tpdc_share = 0.0
+            return_path_share = 0.0
+        else:
+            responder_share = responder_mean * 100.0 / total
+            tpdc_share = tpdc_mean * 100.0 / total
+            return_path_share = return_path_mean * 100.0 / total
+        lines.append(
+            "| {case} | {responder_p95:.3f} | {tpdc_p95:.3f} | {return_path_p95:.3f} | {queued_pct:.2f} | {responder_share:.2f} | {tpdc_share:.2f} | {return_path_share:.2f} | {dominant} |".format(
+                case=str(row["case_name"]),
+                responder_p95=float(
+                    row.get("read_stage_pending_response_queue_dispatch_p95_ns", 0.0)
+                )
+                / 1000.0,
+                tpdc_p95=float(
+                    row.get("read_stage_tpdc_transport_send_serialization_p95_ns", 0.0)
+                )
+                / 1000.0,
+                return_path_p95=float(
+                    row.get("read_stage_return_path_data_fragment_delay_p95_ns", 0.0)
+                )
+                / 1000.0,
+                queued_pct=float(
+                    row.get("read_stage_tpdc_send_window_queued_pct", 0.0)
+                ),
+                responder_share=responder_share,
+                tpdc_share=tpdc_share,
+                return_path_share=return_path_share,
+                dominant=str(row.get("dominant_return_queue_stage", "")),
             )
         )
     lines.extend(
@@ -429,6 +558,12 @@ def main() -> None:
         enriched["case_name"] = str(row["tuning_name"])
         add_stage_shares(enriched)
         enriched["dominant_stage"] = classify_dominant_stage(enriched)
+        enriched["dominant_network_visibility_stage"] = classify_dominant_network_visibility_stage(
+            enriched
+        )
+        enriched["dominant_return_queue_stage"] = classify_dominant_return_queue_stage(
+            enriched
+        )
         enriched["dominant_recovery_stage"] = classify_dominant_recovery_stage(enriched)
         enriched["dominant_failure_stage"] = classify_dominant_failure_stage(enriched)
         rows.append(enriched)

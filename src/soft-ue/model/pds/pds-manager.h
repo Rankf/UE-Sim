@@ -207,6 +207,8 @@ public:
                                    uint64_t writeBudgetBytes,
                                    uint32_t readResponderMessages,
                                    uint64_t readResponseBytes);
+    void ConfigureTpdcReadResponseScheduling (bool aggressiveDrain,
+                                              bool queuePriority);
     void ConfigureControlPlane (bool creditGateEnabled,
                                 bool ackControlEnabled,
                                 Time creditRefreshInterval,
@@ -499,6 +501,8 @@ private:
     uint32_t m_staleCleanupCount;                        ///< Number of stale contexts reaped
     Time m_receiveStateTimeout;                          ///< Context cleanup timeout baseline
     uint32_t m_payloadMtu;                               ///< Explicit semantic payload MTU (0 = derive)
+    bool m_tpdcReadResponseAggressiveDrain;
+    bool m_tpdcReadResponseQueuePriority;
     RudReceiveResourcePool m_receivePool;
     SemanticBudgetState m_sendAdmissionBudget;
     SemanticBudgetState m_writeBudget;

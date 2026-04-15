@@ -657,6 +657,12 @@ struct SoftUeCompletionRecord
     uint64_t read_stage_pending_response_queue_dispatch_ns{0};
     uint64_t read_stage_response_first_packet_tx_ns{0};
     uint64_t read_stage_network_return_visibility_ns{0};
+    uint64_t read_stage_network_queue_serialization_ns{0};
+    uint64_t read_stage_tpdc_transport_send_serialization_ns{0};
+    uint64_t read_stage_return_path_data_fragment_delay_ns{0};
+    bool read_stage_tpdc_send_window_queued{false};
+    uint64_t read_stage_network_reorder_hold_ns{0};
+    uint64_t read_stage_requester_visibility_ns{0};
     uint64_t read_stage_first_response_visible_ns{0};
     uint64_t read_stage_reassembly_complete_ns{0};
     uint64_t read_stage_terminal_ns{0};

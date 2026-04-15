@@ -169,6 +169,8 @@ SueSimulationConfig::SueSimulationConfig ()
     truthRetryTimeoutNs = 0;
     truthRequireFailureEvidence = false;
     truthProtocolCsvRequired = true;
+    truthTpdcReadResponseAggressiveDrain = false;
+    truthTpdcReadResponseQueuePriority = false;
     fabricTopologyMode = "explicit_multipath";
     fabricEndpointMode = "six_endpoint";
     fabricPathCount = 4;
@@ -316,6 +318,8 @@ SueSimulationConfig::ParseCommandLine (int argc, char* argv[])
     cmd.AddValue("truthRetryTimeoutNs", "Truth-path semantic retry timeout in nanoseconds (0 uses soft-ue default)", truthRetryTimeoutNs);
     cmd.AddValue("truthRequireFailureEvidence", "Require truth system_pressure profiles to surface pressure evidence", truthRequireFailureEvidence);
     cmd.AddValue("truthProtocolCsvRequired", "Require truth path to emit protocol CSV rows", truthProtocolCsvRequired);
+    cmd.AddValue("truthTpdcReadResponseAggressiveDrain", "Drain queued READ response TPDC data ahead of other queued packets", truthTpdcReadResponseAggressiveDrain);
+    cmd.AddValue("truthTpdcReadResponseQueuePriority", "Insert queued READ response TPDC data at the head of the queue", truthTpdcReadResponseQueuePriority);
     cmd.AddValue("fabricTopologyMode", "Fabric topology mode for soft_ue_fabric: shared_truth or explicit_multipath", fabricTopologyMode);
     cmd.AddValue("fabricEndpointMode", "Fabric endpoint layout for soft_ue_fabric: six_endpoint or six_by_six", fabricEndpointMode);
     cmd.AddValue("fabricPathCount", "Explicit multipath fabric path count", fabricPathCount);

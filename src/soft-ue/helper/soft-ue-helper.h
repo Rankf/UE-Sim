@@ -56,6 +56,8 @@ public:
                                    uint64_t writeBudgetBytes,
                                    uint32_t readResponderMessages,
                                    uint64_t readResponseBytes);
+    void ConfigureTpdcReadResponseScheduling (bool aggressiveDrain,
+                                              bool queuePriority);
     void SetValidationStrictness (ValidationStrictness strictness);
     void SetDebugSnapshotsEnabled (bool enabled);
     void SetAuthorizeAllJobs (bool allowAll);
@@ -82,6 +84,8 @@ private:
     uint64_t m_writeBudgetBytes;
     uint32_t m_readResponderMessages;
     uint64_t m_readResponseBytes;
+    bool m_tpdcReadResponseAggressiveDrain;
+    bool m_tpdcReadResponseQueuePriority;
     ValidationStrictness m_validationStrictness;
     bool m_debugSnapshotsEnabled;
     bool m_allowAllJobs;

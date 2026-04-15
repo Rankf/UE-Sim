@@ -71,6 +71,8 @@ PdsManager::PdsManager ()
     m_staleCleanupCount (0),
     m_receiveStateTimeout (MilliSeconds (80)),
     m_payloadMtu (0),
+    m_tpdcReadResponseAggressiveDrain (false),
+    m_tpdcReadResponseQueuePriority (false),
     m_receivePool (),
     m_sendAdmissionBudget (),
     m_writeBudget (),
@@ -1508,6 +1510,14 @@ PdsManager::ConfigureControlPlane (bool creditGateEnabled,
 }
 
 void
+PdsManager::ConfigureTpdcReadResponseScheduling (bool aggressiveDrain,
+                                                 bool queuePriority)
+{
+  m_tpdcReadResponseAggressiveDrain = aggressiveDrain;
+  m_tpdcReadResponseQueuePriority = queuePriority;
+}
+
+void
 PdsManager::SetPayloadMtu (uint32_t payloadMtu)
 {
   m_payloadMtu = payloadMtu;
@@ -1766,6 +1776,8 @@ PdsManager::EnsureReceivePdc (uint16_t pdcId, uint32_t sourceFep, bool reliable)
     tpdcConfig.initialRto = MilliSeconds (30);
     tpdcConfig.maxRto = MilliSeconds (120);
     tpdcConfig.ackTimeout = MilliSeconds (1);
+    tpdcConfig.readResponseAggressiveDrain = m_tpdcReadResponseAggressiveDrain;
+    tpdcConfig.readResponseQueuePriority = m_tpdcReadResponseQueuePriority;
     pdc = tpdc;
     if (!pdc)
     {
@@ -1920,6 +1932,8 @@ PdsManager::AllocatePdc (uint32_t destFep, uint8_t tc, uint8_t dm,
     tpdcConfig.maxRto = MilliSeconds (120);
     tpdcConfig.ackTimeout = MilliSeconds (1);
     tpdcConfig.maxRetransmissions = Max_RTO_Retx_Cnt + 1;
+    tpdcConfig.readResponseAggressiveDrain = m_tpdcReadResponseAggressiveDrain;
+    tpdcConfig.readResponseQueuePriority = m_tpdcReadResponseQueuePriority;
     pdc = tpdc;
     if (!pdc)
     {

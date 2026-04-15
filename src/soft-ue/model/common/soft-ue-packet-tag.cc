@@ -760,6 +760,210 @@ SoftUeTimingTag::SetDetailTimestamp (Time time)
 // SoftUeRecoveryTag Implementation
 // ============================================================================
 
+NS_OBJECT_ENSURE_REGISTERED (SoftUeChannelTimingTag);
+
+TypeId
+SoftUeChannelTimingTag::GetTypeId (void)
+{
+    NS_LOG_FUNCTION_NOARGS ();
+    static TypeId tid = TypeId ("ns3::SoftUeChannelTimingTag")
+        .SetParent<Tag> ()
+        .SetGroupName ("SoftUe")
+        .AddConstructor<SoftUeChannelTimingTag> ();
+    return tid;
+}
+
+TypeId
+SoftUeChannelTimingTag::GetInstanceTypeId (void) const
+{
+    NS_LOG_FUNCTION (this);
+    return GetTypeId ();
+}
+
+uint32_t
+SoftUeChannelTimingTag::GetSerializedSize (void) const
+{
+    NS_LOG_FUNCTION (this);
+    return 3 * sizeof (int64_t);
+}
+
+void
+SoftUeChannelTimingTag::Serialize (TagBuffer i) const
+{
+    NS_LOG_FUNCTION (this << &i);
+    i.WriteU64 ((int64_t)m_baselineReceiveTime.GetNanoSeconds ());
+    i.WriteU64 ((int64_t)m_holdReleaseTime.GetNanoSeconds ());
+    i.WriteU64 ((int64_t)m_channelReceiveTime.GetNanoSeconds ());
+}
+
+void
+SoftUeChannelTimingTag::Deserialize (TagBuffer i)
+{
+    NS_LOG_FUNCTION (this << &i);
+    m_baselineReceiveTime = NanoSeconds (i.ReadU64 ());
+    m_holdReleaseTime = NanoSeconds (i.ReadU64 ());
+    m_channelReceiveTime = NanoSeconds (i.ReadU64 ());
+}
+
+void
+SoftUeChannelTimingTag::Print (std::ostream &os) const
+{
+    NS_LOG_FUNCTION (this << &os);
+    os << "SoftUeChannelTimingTag [baseline=" << m_baselineReceiveTime.GetNanoSeconds ()
+       << "ns, hold_release=" << m_holdReleaseTime.GetNanoSeconds ()
+       << "ns, channel_receive=" << m_channelReceiveTime.GetNanoSeconds () << "ns]";
+}
+
+SoftUeChannelTimingTag::SoftUeChannelTimingTag ()
+    : m_baselineReceiveTime (Time::Max ()),
+      m_holdReleaseTime (Time::Max ()),
+      m_channelReceiveTime (Time::Max ())
+{
+    NS_LOG_FUNCTION (this);
+}
+
+Time
+SoftUeChannelTimingTag::GetBaselineReceiveTime (void) const
+{
+    NS_LOG_FUNCTION (this);
+    return m_baselineReceiveTime;
+}
+
+void
+SoftUeChannelTimingTag::SetBaselineReceiveTime (Time time)
+{
+    NS_LOG_FUNCTION (this << time.GetNanoSeconds ());
+    m_baselineReceiveTime = time;
+}
+
+Time
+SoftUeChannelTimingTag::GetHoldReleaseTime (void) const
+{
+    NS_LOG_FUNCTION (this);
+    return m_holdReleaseTime;
+}
+
+void
+SoftUeChannelTimingTag::SetHoldReleaseTime (Time time)
+{
+    NS_LOG_FUNCTION (this << time.GetNanoSeconds ());
+    m_holdReleaseTime = time;
+}
+
+Time
+SoftUeChannelTimingTag::GetChannelReceiveTime (void) const
+{
+    NS_LOG_FUNCTION (this);
+    return m_channelReceiveTime;
+}
+
+void
+SoftUeChannelTimingTag::SetChannelReceiveTime (Time time)
+{
+    NS_LOG_FUNCTION (this << time.GetNanoSeconds ());
+    m_channelReceiveTime = time;
+}
+
+// ============================================================================
+// SoftUeTransportTimingTag Implementation
+// ============================================================================
+
+NS_OBJECT_ENSURE_REGISTERED (SoftUeTransportTimingTag);
+
+TypeId
+SoftUeTransportTimingTag::GetTypeId (void)
+{
+    static TypeId tid = TypeId ("ns3::SoftUeTransportTimingTag")
+        .SetParent<Tag> ()
+        .SetGroupName ("SoftUe")
+        .AddConstructor<SoftUeTransportTimingTag> ();
+    return tid;
+}
+
+TypeId
+SoftUeTransportTimingTag::GetInstanceTypeId (void) const
+{
+    return GetTypeId ();
+}
+
+uint32_t
+SoftUeTransportTimingTag::GetSerializedSize (void) const
+{
+    return 2 * sizeof (int64_t) + sizeof (uint8_t);
+}
+
+void
+SoftUeTransportTimingTag::Serialize (TagBuffer i) const
+{
+    i.WriteU64 ((int64_t)m_transportAcceptTime.GetNanoSeconds ());
+    i.WriteU64 ((int64_t)m_transportTransmitTime.GetNanoSeconds ());
+    i.WriteU8 (m_queuedForSendWindow ? 1 : 0);
+}
+
+void
+SoftUeTransportTimingTag::Deserialize (TagBuffer i)
+{
+    m_transportAcceptTime = NanoSeconds (i.ReadU64 ());
+    m_transportTransmitTime = NanoSeconds (i.ReadU64 ());
+    m_queuedForSendWindow = i.ReadU8 () != 0;
+}
+
+void
+SoftUeTransportTimingTag::Print (std::ostream &os) const
+{
+    os << "SoftUeTransportTimingTag [accept="
+       << m_transportAcceptTime.GetNanoSeconds ()
+       << "ns, tx=" << m_transportTransmitTime.GetNanoSeconds ()
+       << "ns, queued=" << (m_queuedForSendWindow ? 1 : 0) << "]";
+}
+
+SoftUeTransportTimingTag::SoftUeTransportTimingTag ()
+    : m_transportAcceptTime (Time::Max ()),
+      m_transportTransmitTime (Time::Max ()),
+      m_queuedForSendWindow (false)
+{
+}
+
+Time
+SoftUeTransportTimingTag::GetTransportAcceptTime (void) const
+{
+    return m_transportAcceptTime;
+}
+
+void
+SoftUeTransportTimingTag::SetTransportAcceptTime (Time time)
+{
+    m_transportAcceptTime = time;
+}
+
+Time
+SoftUeTransportTimingTag::GetTransportTransmitTime (void) const
+{
+    return m_transportTransmitTime;
+}
+
+void
+SoftUeTransportTimingTag::SetTransportTransmitTime (Time time)
+{
+    m_transportTransmitTime = time;
+}
+
+bool
+SoftUeTransportTimingTag::GetQueuedForSendWindow (void) const
+{
+    return m_queuedForSendWindow;
+}
+
+void
+SoftUeTransportTimingTag::SetQueuedForSendWindow (bool queued)
+{
+    m_queuedForSendWindow = queued;
+}
+
+// ============================================================================
+// SoftUeRecoveryTag Implementation
+// ============================================================================
+
 NS_OBJECT_ENSURE_REGISTERED (SoftUeRecoveryTag);
 
 TypeId

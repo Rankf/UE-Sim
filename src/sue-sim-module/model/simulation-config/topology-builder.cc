@@ -278,6 +278,9 @@ TopologyBuilder::CreateSoftUeTruthConnections (const SueSimulationConfig& config
                                      config.truthWriteBudgetBytes,
                                      config.truthReadResponderMessages,
                                      config.truthReadResponseBytes);
+    helper.ConfigureTpdcReadResponseScheduling (
+        config.truthTpdcReadResponseAggressiveDrain,
+        config.truthTpdcReadResponseQueuePriority);
     if (config.truthRetryTimeoutNs > 0)
     {
         helper.ConfigureRetry (true, NanoSeconds (config.truthRetryTimeoutNs));

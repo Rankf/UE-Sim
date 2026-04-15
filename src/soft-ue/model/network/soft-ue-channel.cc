@@ -437,6 +437,7 @@ SoftUeChannel::Transmit (Ptr<Packet> packet, Ptr<NetDevice> src, uint32_t source
                   continue;
                 }
               Time receiveDelay = Seconds (0);
+              const Time now = Simulator::Now ();
               if (m_pathCount > 1 && m_useEcmpHash)
                 {
                   if (!delayReserved)
@@ -450,11 +451,19 @@ SoftUeChannel::Transmit (Ptr<Packet> packet, Ptr<NetDevice> src, uint32_t source
                 {
                   receiveDelay = CalculateScheduleDelay (packet);
                 }
+              const Time baselineReceiveAt = now + receiveDelay;
               if (!m_hasHeldTransmission && isResponse && m_holdNextResponse)
                 {
                   m_holdNextResponse = false;
                   m_hasHeldTransmission = true;
                   m_heldTransmission.packet = packet->Copy ();
+                  SoftUeChannelTimingTag channelTimingTag;
+                  if (m_heldTransmission.packet->PeekPacketTag (channelTimingTag))
+                    {
+                      m_heldTransmission.packet->RemovePacketTag (channelTimingTag);
+                    }
+                  channelTimingTag.SetBaselineReceiveTime (baselineReceiveAt);
+                  m_heldTransmission.packet->AddPacketTag (channelTimingTag);
                   m_heldTransmission.dest = dest;
                   m_heldTransmission.sourceFep = sourceFep;
                   m_heldTransmission.destFep = destFep;
@@ -475,6 +484,13 @@ SoftUeChannel::Transmit (Ptr<Packet> packet, Ptr<NetDevice> src, uint32_t source
                 {
                   m_hasHeldTransmission = true;
                   m_heldTransmission.packet = packet->Copy ();
+                  SoftUeChannelTimingTag channelTimingTag;
+                  if (m_heldTransmission.packet->PeekPacketTag (channelTimingTag))
+                    {
+                      m_heldTransmission.packet->RemovePacketTag (channelTimingTag);
+                    }
+                  channelTimingTag.SetBaselineReceiveTime (baselineReceiveAt);
+                  m_heldTransmission.packet->AddPacketTag (channelTimingTag);
                   m_heldTransmission.dest = dest;
                   m_heldTransmission.sourceFep = sourceFep;
                   m_heldTransmission.destFep = destFep;
@@ -490,7 +506,16 @@ SoftUeChannel::Transmit (Ptr<Packet> packet, Ptr<NetDevice> src, uint32_t source
                 }
               else
                 {
-                  ScheduleReceive (packet->Copy (), dest, sourceFep, destFep, receiveDelay);
+                  Ptr<Packet> deliveryPacket = packet->Copy ();
+                  SoftUeChannelTimingTag channelTimingTag;
+                  if (deliveryPacket->PeekPacketTag (channelTimingTag))
+                    {
+                      deliveryPacket->RemovePacketTag (channelTimingTag);
+                    }
+                  channelTimingTag.SetBaselineReceiveTime (baselineReceiveAt);
+                  channelTimingTag.SetHoldReleaseTime (baselineReceiveAt);
+                  deliveryPacket->AddPacketTag (channelTimingTag);
+                  ScheduleReceive (deliveryPacket, dest, sourceFep, destFep, receiveDelay);
                 }
             }
         }
@@ -514,6 +539,13 @@ SoftUeChannel::ReleaseHeldPacket (Time scheduleDelay)
                                                   m_heldTransmission.sourceFep,
                                                   m_heldTransmission.destFep)
           : (m_serializeTransmissions ? CalculateScheduleDelay (m_heldTransmission.packet) : scheduleDelay);
+  SoftUeChannelTimingTag channelTimingTag;
+  if (m_heldTransmission.packet->PeekPacketTag (channelTimingTag))
+    {
+      m_heldTransmission.packet->RemovePacketTag (channelTimingTag);
+    }
+  channelTimingTag.SetHoldReleaseTime (Simulator::Now ());
+  m_heldTransmission.packet->AddPacketTag (channelTimingTag);
   ScheduleReceive (m_heldTransmission.packet,
                    m_heldTransmission.dest,
                    m_heldTransmission.sourceFep,
@@ -561,6 +593,14 @@ SoftUeChannel::ReceivePacket (Ptr<Packet> packet, Ptr<NetDevice> dest, uint32_t 
   NS_LOG_INFO ("[UEC-E2E] [Channel] (6) ReceivePacket: FEP " << sourceFep << " -> FEP " << destFep
                << " delivered, device will ReceivePacket");
   m_rxTrace (packet, sourceFep, destFep);
+
+  SoftUeChannelTimingTag channelTimingTag;
+  if (packet && packet->PeekPacketTag (channelTimingTag))
+    {
+      packet->RemovePacketTag (channelTimingTag);
+      channelTimingTag.SetChannelReceiveTime (Simulator::Now ());
+      packet->AddPacketTag (channelTimingTag);
+    }
 
   // Forward packet to device for processing
   softUeDevice->ReceivePacket (packet, sourceFep, destFep);

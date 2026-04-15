@@ -37,6 +37,8 @@ SoftUeHelper::SoftUeHelper ()
     m_writeBudgetBytes (64ull * 2048ull),
     m_readResponderMessages (64),
     m_readResponseBytes (64ull * 2048ull),
+    m_tpdcReadResponseAggressiveDrain (false),
+    m_tpdcReadResponseQueuePriority (false),
     m_validationStrictness (ValidationStrictness::STRICT),
     m_debugSnapshotsEnabled (true),
     m_allowAllJobs (true)
@@ -115,6 +117,9 @@ SoftUeHelper::Install (NodeContainer nodes)
       if (device->GetPdsManager ())
         {
           device->GetPdsManager ()->SetPayloadMtu (m_payloadMtu);
+          device->GetPdsManager ()->ConfigureTpdcReadResponseScheduling (
+              m_tpdcReadResponseAggressiveDrain,
+              m_tpdcReadResponseQueuePriority);
         }
 
       // Connect device to channel
@@ -242,6 +247,14 @@ SoftUeHelper::ConfigureSemanticBudgets (uint32_t sendAdmissionMessages,
   m_writeBudgetBytes = writeBudgetBytes;
   m_readResponderMessages = readResponderMessages;
   m_readResponseBytes = readResponseBytes;
+}
+
+void
+SoftUeHelper::ConfigureTpdcReadResponseScheduling (bool aggressiveDrain,
+                                                   bool queuePriority)
+{
+  m_tpdcReadResponseAggressiveDrain = aggressiveDrain;
+  m_tpdcReadResponseQueuePriority = queuePriority;
 }
 
 void

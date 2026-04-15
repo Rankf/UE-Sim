@@ -272,6 +272,8 @@ struct SueSimulationConfig
     uint64_t truthRetryTimeoutNs; //!< Truth-path semantic retry timeout in nanoseconds (0 uses default)
     bool truthRequireFailureEvidence; //!< Require pressure profiles to surface control/resource/packet evidence
     bool truthProtocolCsvRequired; //!< Whether truth-backed runs require protocol CSV data
+    bool truthTpdcReadResponseAggressiveDrain; //!< Drain queued READ response data ahead of other TPDC packets
+    bool truthTpdcReadResponseQueuePriority; //!< Insert queued READ response data at head of TPDC queue
     std::string fabricTopologyMode; //!< Fabric topology mode: shared_truth | explicit_multipath
     std::string fabricEndpointMode; //!< Fabric endpoint layout: six_endpoint | six_by_six
     uint32_t fabricPathCount; //!< Explicit fabric path count

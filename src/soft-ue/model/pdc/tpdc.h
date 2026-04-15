@@ -65,12 +65,15 @@ struct TpdcConfig : public PdcConfig
     bool enableCumulativeAcks;                ///< Enable cumulative acknowledgments
     Time ackTimeout;                          ///< Acknowledgment timeout
     uint16_t maxPacketsPerAck;                ///< Maximum packets per ACK
+    bool readResponseAggressiveDrain;         ///< Drain queued READ responses ahead of other packets
+    bool readResponseQueuePriority;           ///< Insert queued READ responses at the head of the queue
 
     TpdcConfig ()
         : PdcConfig (), maxSendBufferSize (2048), maxReceiveBufferSize (2048),
           sendWindowSize (128), receiveWindowSize (128), maxRetransmissions (5),
           initialRto (MilliSeconds (200)), maxRto (Seconds (2)), rtoBackoffMultiplier (2.0),
-          enableCumulativeAcks (true), ackTimeout (MilliSeconds (100)), maxPacketsPerAck (8)
+          enableCumulativeAcks (true), ackTimeout (MilliSeconds (100)), maxPacketsPerAck (8),
+          readResponseAggressiveDrain (false), readResponseQueuePriority (false)
     {
         type = PdcType::TPDC;
     }
@@ -358,7 +361,7 @@ private:
     // Packet buffers
     std::unordered_map<uint32_t, BufferedPacket> m_sendBuffer;  ///< Send buffer (seq -> packet)
     std::unordered_map<uint32_t, BufferedPacket> m_receiveBuffer; ///< Receive buffer (seq -> packet)
-    std::queue<BufferedPacket> m_sendQueue;    ///< Outgoing packet queue
+    std::deque<BufferedPacket> m_sendQueue;    ///< Outgoing packet queue
 
     // ACK management
     std::queue<Acknowledgment> m_ackQueue;     ///< Acknowledgment queue
@@ -386,6 +389,7 @@ private:
 
     // Internal helper methods
     bool BufferPacketForSending (Ptr<Packet> packet, bool som, bool eom);
+    bool IsReadResponsePacket (Ptr<Packet> packet) const;
     bool BufferPacketForReceiving (Ptr<Packet> packet, uint32_t seq);
     void ProcessSendQueue (void);
     void ProcessReceiveQueue (void);
